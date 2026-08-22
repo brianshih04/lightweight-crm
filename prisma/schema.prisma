@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  avatar    String?
+  role      String   @default("SALES") // ADMIN, SALES, MARKETING, SUPPORT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedLeads   Lead[]
+  assignedDeals   Deal[]
+  assignedTickets Ticket[]
+  activities      Activity[]
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  name         String
+  industry     String?
+  website      String?
+  phone        String?
+  address      String?
+  customFields String?  // JSON string
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contacts   Contact[]
+  deals      Deal[]
+  tickets    Ticket[]
+  activities Activity[]
+}
+
+model Contact {
+  id           String   @id @default(cuid())
+  accountId    String?
+  name         String
+  email        String?
+  phone        String?
+  title        String?
+  avatar       String?
+  tags         String?  // comma separated e.g. "VIP, Decision Maker"
+  customFields String?  // JSON string
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account    Account?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  deals      Deal[]
+  tickets    Ticket[]
+  activities Activity[]
+}
+
+model Lead {
+  id           String   @id @default(cuid())
+  name         String
+  email        String?
+  phone        String?
+  company      String?
+  source       String   @default("Website") // Website, Referral, Ads, Event, Cold Call
+  status       String   @default("NEW") // NEW, CONTACTED, QUALIFIED, UNQUALIFIED, CONVERTED
+  score        Int      @default(50)
+  notes        String?
+  assignedToId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedTo User? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+}
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  name      String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages Stage[]
+  deals  Deal[]
+}
+
+model Stage {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  name        String
+  order       Int
+  color       String   @default("#6366f1")
+  probability Int      @default(50) // 0-100%
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals    Deal[]
+}
+
+model Deal {
+  id                String    @id @default(cuid())
+  title             String
+  value             Float     @default(0)
+  currency          String    @default("TWD")
+  pipelineId        String
+  stageId           String
+  contactId         String?
+  accountId         String?
+  assignedToId      String?
+  status            String    @default("OPEN") // OPEN, WON, LOST
+  expectedCloseDate DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  pipeline   Pipeline   @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stage      Stage      @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  account    Account?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  assignedTo User?      @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  activities Activity[]
+}
+
+model Activity {
+  id          String    @id @default(cuid())
+  type        String    // NOTE, CALL, EMAIL, MEETING, STAGE_CHANGE, TASK, SYSTEM
+  title       String
+  content     String?
+  contactId   String?
+  accountId   String?
+  dealId      String?
+  ticketId    String?
+  userId      String?
+  dueDate     DateTime?
+  isCompleted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deal    Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  ticket  Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Segment {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  filterType     String   @default("DYNAMIC") // STATIC, DYNAMIC
+  filterCriteria String?  // JSON query rules
+  contactCount   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  campaigns Campaign[]
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String
+  bodyHtml  String
+  variables String?  // comma-separated list of available variables
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id             String    @id @default(cuid())
+  name           String
+  channel        String    @default("EMAIL") // EMAIL, SMS, WEBHOOK
+  status         String    @default("DRAFT") // DRAFT, SCHEDULED, SENDING, SENT, CANCELLED
+  segmentId      String?
+  templateId     String?
+  subject        String?
+  content        String?
+  scheduledAt    DateTime?
+  sentCount      Int       @default(0)
+  deliveredCount Int       @default(0)
+  openedCount    Int       @default(0)
+  clickedCount   Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  segment  Segment?       @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  template EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+}
+
+model Workflow {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  triggerEvent   String   // NEW_LEAD, DEAL_WON, TICKET_CREATED, FORM_SUBMIT
+  conditions     String?  // JSON rules
+  actions        String   // JSON actions list e.g. [{"action": "SEND_EMAIL", "templateId": "xyz"}, {"action": "CREATE_TASK"}]
+  isActive       Boolean  @default(true)
+  executionCount Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  logs WorkflowLog[]
+}
+
+model WorkflowLog {
+  id          String   @id @default(cuid())
+  workflowId  String
+  triggerData String?  // JSON string
+  status      String   @default("SUCCESS") // SUCCESS, FAILED
+  errorMsg    String?
+  executedAt  DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+}
+
+model Ticket {
+  id              String    @id @default(cuid())
+  ticketNumber    String    @unique
+  subject         String
+  description     String
+  status          String    @default("OPEN") // OPEN, IN_PROGRESS, PENDING, RESOLVED, CLOSED
+  priority        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  channel         String    @default("WEB") // EMAIL, WEB, PHONE, CHAT
+  contactId       String?
+  accountId       String?
+  assignedToId    String?
+  slaDueAt        DateTime?
+  firstResponseAt DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  contact    Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  account    Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  assignedTo User?           @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages   TicketMessage[]
+  activities Activity[]
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  senderId   String?
+  senderName String
+  senderType String   @default("AGENT") // AGENT, CUSTOMER
+  isInternal Boolean  @default(false)
+  content    String
+  createdAt  DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const { username, password } = await request.json();
+    const body = await request.json();
+    const { username, password } = body;
 
     if (!username || !password) {
       return NextResponse.json({ error: "請輸入帳號與密碼" }, { status: 400 });
@@ -32,18 +34,21 @@ export async function POST(request: Request) {
       managerId: user.managerId,
     };
 
-    const cookieStore = cookies();
-    cookieStore.set("crm_auth_session", JSON.stringify(sessionPayload), {
+    const response = NextResponse.json({ success: true, user: sessionPayload });
+
+    response.cookies.set({
+      name: "crm_auth_session",
+      value: JSON.stringify(sessionPayload),
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false, // allow local and cloudflare SSL proxy
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: "/",
     });
 
-    return NextResponse.json({ success: true, user: sessionPayload });
+    return response;
   } catch (error) {
     console.error("Login API Error:", error);
-    return NextResponse.json({ error: "登入失敗" }, { status: 500 });
+    return NextResponse.json({ error: "登入失敗: " + String(error) }, { status: 500 });
   }
 }

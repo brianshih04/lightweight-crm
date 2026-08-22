@@ -25,7 +25,7 @@ async function main() {
   const gmUser = await prisma.user.create({
     data: {
       username: "admin",
-      password: "admin123",
+      password: "Avi22099759",
       name: "柯博文 (Peter)",
       email: "peter.gm@company.com",
       role: "GM",

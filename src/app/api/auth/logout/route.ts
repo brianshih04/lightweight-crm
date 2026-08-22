@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+
+export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const cookieStore = cookies();
-  cookieStore.delete("crm_auth_session");
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+  response.cookies.delete("crm_auth_session");
+  return response;
 }

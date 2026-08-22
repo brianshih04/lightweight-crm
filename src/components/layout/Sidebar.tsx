@@ -17,6 +17,7 @@ import {
   ChevronRight,
   LucideIcon,
   LogOut,
+  UserCog,
 } from "lucide-react";
 import { cn, REGIONS } from "@/lib/utils";
 
@@ -25,7 +26,7 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   badge?: string;
-  minRole?: string[]; // Allowed roles e.g. ["GM", "ADMIN", "SALES_MANAGER"]
+  minRole?: string[]; // Allowed roles
 }
 
 interface NavSection {
@@ -39,6 +40,7 @@ const navigation: NavSection[] = [
     items: [
       { name: "總覽儀表板", href: "/dashboard", icon: LayoutDashboard },
       { name: "總經理決策報表", href: "/reports", icon: FileText, badge: "GM / 主管", minRole: ["GM", "ADMIN", "SALES_MANAGER"] },
+      { name: "人員與區域管理", href: "/settings/users", icon: UserCog, badge: "Admin 專用", minRole: ["GM", "ADMIN"] },
     ],
   },
   {

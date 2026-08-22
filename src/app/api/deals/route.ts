@@ -3,14 +3,23 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const region = searchParams.get("region");
+
+    const dealWhere: any = {};
+    if (region && region !== "ALL") {
+      dealWhere.region = region;
+    }
+
     const pipelines = await prisma.pipeline.findMany({
       include: {
         stages: {
           orderBy: { order: "asc" },
           include: {
             deals: {
+              where: dealWhere,
               include: {
                 contact: true,
                 account: true,
@@ -38,7 +47,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, value, pipelineId, stageId, contactId, accountId, assignedToId, expectedCloseDate, notes } = body;
+    const { title, value, pipelineId, stageId, contactId, accountId, assignedToId, region, expectedCloseDate, notes } = body;
 
     if (!title || !pipelineId || !stageId) {
       return NextResponse.json({ error: "商機名稱、管線與階段為必填" }, { status: 400 });
@@ -48,6 +57,7 @@ export async function POST(request: Request) {
       data: {
         title,
         value: parseFloat(value) || 0,
+        region: region || "NORTH",
         pipelineId,
         stageId,
         contactId: contactId || null,
@@ -60,6 +70,7 @@ export async function POST(request: Request) {
         stage: true,
         contact: true,
         account: true,
+        assignedTo: true,
       },
     });
 
@@ -67,7 +78,7 @@ export async function POST(request: Request) {
     await prisma.activity.create({
       data: {
         type: "NOTE",
-        title: `建立了新商機「${title}」`,
+        title: `建立了新商機「${title}」(${deal.region} 區)`,
         content: `金額：${deal.value} 元`,
         contactId: deal.contactId,
         accountId: deal.accountId,

@@ -27,6 +27,14 @@ export function formatRelativeTime(date: Date | string | null | undefined) {
   return formatDistanceToNow(d, { addSuffix: true, locale: zhTW });
 }
 
+export const REGIONS: Record<string, { label: string; badge: string; dot: string }> = {
+  ALL: { label: "全區總覽", badge: "bg-slate-100 text-slate-700 border-slate-200", dot: "#64748b" },
+  NORTH: { label: "北部區域 (台北/新竹)", badge: "bg-blue-50 text-blue-700 border-blue-200", dot: "#3b82f6" },
+  CENTRAL: { label: "中部區域 (台中/彰化)", badge: "bg-indigo-50 text-indigo-700 border-indigo-200", dot: "#6366f1" },
+  SOUTH: { label: "南部區域 (高雄/台南)", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "#10b981" },
+  OVERSEAS: { label: "海外與亞太區", badge: "bg-purple-50 text-purple-700 border-purple-200", dot: "#a855f7" },
+};
+
 export const STAGE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   "初次接洽": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
   "需求確認": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  FileText,
   Users,
   Building2,
   KanbanSquare,
@@ -15,6 +16,7 @@ import {
   Sparkles,
   ChevronRight,
   LucideIcon,
+  Globe2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +34,13 @@ interface NavSection {
 
 const navigation: NavSection[] = [
   {
+    group: "管理與決策分析",
+    items: [
+      { name: "總覽儀表板", href: "/dashboard", icon: LayoutDashboard },
+      { name: "總經理決策報表", href: "/reports", icon: FileText, badge: "GM 專用" },
+    ],
+  },
+  {
     group: "客戶 360",
     items: [
       { name: "聯絡人管理", href: "/contacts", icon: Users },
@@ -41,8 +50,8 @@ const navigation: NavSection[] = [
   {
     group: "銷售管理 (SFA)",
     items: [
-      { name: "商機看板 (Kanban)", href: "/sales/pipeline", icon: KanbanSquare, badge: "8" },
-      { name: "潛在線索 (Leads)", href: "/sales/leads", icon: UserPlus, badge: "新" },
+      { name: "商機看板 (Kanban)", href: "/sales/pipeline", icon: KanbanSquare, badge: "分區支援" },
+      { name: "潛在線索 (Leads)", href: "/sales/leads", icon: UserPlus },
     ],
   },
   {
@@ -73,30 +82,13 @@ export function Sidebar() {
         <div>
           <span className="font-bold text-white tracking-wide text-base">NexCRM</span>
           <span className="block text-[10px] text-indigo-400 font-medium tracking-wider uppercase">
-            企業級輕量系統
+            多區域 · 多人協作版
           </span>
         </div>
       </div>
 
       {/* Navigation Links */}
       <div className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
-        {/* Dashboard Link */}
-        <div>
-          <Link
-            href="/"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
-              pathname === "/"
-                ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30"
-                : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"
-            )}
-          >
-            <LayoutDashboard className="w-4 h-4 shrink-0" />
-            <span>總覽儀表板</span>
-          </Link>
-        </div>
-
-        {/* Grouped Sections */}
         {navigation.map((section, idx) => (
           <div key={idx} className="space-y-1">
             <p className="px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -104,11 +96,12 @@ export function Sidebar() {
             </p>
             {section.items.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname.startsWith(item.href);
+              const isActive = item.href === "/dashboard" ? pathname === "/" || pathname === "/dashboard" : pathname.startsWith(item.href);
+              const targetHref = item.href === "/dashboard" ? "/" : item.href;
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={targetHref}
                   className={cn(
                     "flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150",
                     isActive
@@ -132,20 +125,20 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* User / Workspace Footer */}
+      {/* GM / Active User Footer */}
       <div className="p-3 border-t border-slate-800 bg-slate-950/40">
-        <div className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-800/60 transition cursor-pointer">
+        <Link href="/reports" className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-800/60 transition cursor-pointer">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 font-bold flex items-center justify-center text-xs">
-              AD
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold flex items-center justify-center text-xs">
+              GM
             </div>
             <div className="text-left">
-              <p className="text-xs font-medium text-slate-200">系統管理員 (Admin)</p>
-              <p className="text-[11px] text-slate-500">admin@company.com</p>
+              <p className="text-xs font-semibold text-slate-200">柯博文 (Peter)</p>
+              <p className="text-[11px] text-slate-500">總經理 · 全區權限</p>
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-500" />
-        </div>
+        </Link>
       </div>
     </aside>
   );

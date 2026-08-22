@@ -8,13 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  avatar    String?
-  role      String   @default("SALES") // ADMIN, SALES, MARKETING, SUPPORT
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  avatar     String?
+  role       String   @default("SALES") // GM, ADMIN, SALES_MANAGER, SALES, MARKETING, SUPPORT
+  department String   @default("業務部") // 總經理室, 業務部, 行銷部, 客服部
+  region     String   @default("ALL") // ALL (全區/總部), NORTH (北部), CENTRAL (中部), SOUTH (南部), OVERSEAS (海外)
+  title      String   @default("業務代表")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   assignedLeads   Lead[]
   assignedDeals   Deal[]
@@ -26,6 +29,7 @@ model Account {
   id           String   @id @default(cuid())
   name         String
   industry     String?
+  region       String   @default("NORTH") // NORTH, CENTRAL, SOUTH, OVERSEAS
   website      String?
   phone        String?
   address      String?
@@ -46,8 +50,9 @@ model Contact {
   email        String?
   phone        String?
   title        String?
+  region       String   @default("NORTH") // NORTH, CENTRAL, SOUTH, OVERSEAS
   avatar       String?
-  tags         String?  // comma separated e.g. "VIP, Decision Maker"
+  tags         String?  // comma separated e.g. "VIP, 決策主管"
   customFields String?  // JSON string
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -64,6 +69,7 @@ model Lead {
   email        String?
   phone        String?
   company      String?
+  region       String   @default("NORTH") // NORTH, CENTRAL, SOUTH, OVERSEAS
   source       String   @default("Website") // Website, Referral, Ads, Event, Cold Call
   status       String   @default("NEW") // NEW, CONTACTED, QUALIFIED, UNQUALIFIED, CONVERTED
   score        Int      @default(50)
@@ -105,6 +111,7 @@ model Deal {
   title             String
   value             Float     @default(0)
   currency          String    @default("TWD")
+  region            String    @default("NORTH") // NORTH, CENTRAL, SOUTH, OVERSEAS
   pipelineId        String
   stageId           String
   contactId         String?
@@ -225,6 +232,7 @@ model Ticket {
   status          String    @default("OPEN") // OPEN, IN_PROGRESS, PENDING, RESOLVED, CLOSED
   priority        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
   channel         String    @default("WEB") // EMAIL, WEB, PHONE, CHAT
+  region          String    @default("NORTH") // NORTH, CENTRAL, SOUTH, OVERSEAS
   contactId       String?
   accountId       String?
   assignedToId    String?

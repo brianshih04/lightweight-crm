@@ -20,10 +20,12 @@ async function main() {
   await prisma.segment.deleteMany({});
   await prisma.user.deleteMany({});
 
-  console.log("🌱 Seeding Multi-User Organization...");
-  // 1. General Manager (總經理)
+  console.log("🌱 Seeding Multi-User Hierarchy & Passwords...");
+  // 1. General Manager (總經理) - Admin & Full Access
   const gmUser = await prisma.user.create({
     data: {
+      username: "admin",
+      password: "admin123",
       name: "柯博文 (Peter)",
       email: "peter.gm@company.com",
       role: "GM",
@@ -33,54 +35,83 @@ async function main() {
     },
   });
 
-  // 2. Regional Sales Team
-  const salesNorth = await prisma.user.create({
+  // 2. Regional Sales Manager (北部業務主管)
+  const salesNorthMgr = await prisma.user.create({
     data: {
+      username: "alice_mgr",
+      password: "alice123",
       name: "張雅婷 (Alice)",
       email: "alice.sales@company.com",
       role: "SALES_MANAGER",
       department: "業務部",
       region: "NORTH",
       title: "北部業務處主管",
+      managerId: gmUser.id,
+    },
+  });
+
+  // 3. Subordinate Sales Reps
+  const salesNorthRep = await prisma.user.create({
+    data: {
+      username: "kevin_sales",
+      password: "kevin123",
+      name: "林凱文 (Kevin)",
+      email: "kevin.sales@company.com",
+      role: "SALES",
+      department: "業務部",
+      region: "NORTH",
+      title: "北部業務代表",
+      managerId: salesNorthMgr.id,
     },
   });
 
   const salesCentral = await prisma.user.create({
     data: {
+      username: "bob_sales",
+      password: "bob123",
       name: "李宗翰 (Bob)",
       email: "bob.sales@company.com",
       role: "SALES",
       department: "業務部",
       region: "CENTRAL",
       title: "中部資深業務經理",
+      managerId: gmUser.id,
     },
   });
 
   const salesSouth = await prisma.user.create({
     data: {
+      username: "charlie_sales",
+      password: "charlie123",
       name: "趙冠宇 (Charlie)",
       email: "charlie.sales@company.com",
       role: "SALES",
       department: "業務部",
       region: "SOUTH",
-      title: "南部業務副理",
+      title: "南部業務代表",
+      managerId: gmUser.id,
     },
   });
 
   const salesOverseas = await prisma.user.create({
     data: {
+      username: "sophia_sales",
+      password: "sophia123",
       name: "孫佩華 (Sophia)",
       email: "sophia.overseas@company.com",
       role: "SALES",
       department: "海外事業部",
       region: "OVERSEAS",
-      title: "海外亞太區商務總監",
+      title: "海外亞太區商務代表",
+      managerId: gmUser.id,
     },
   });
 
-  // 3. Marketing & Customer Support
+  // 4. Marketing & Customer Support
   const mktCarol = await prisma.user.create({
     data: {
+      username: "carol_mkt",
+      password: "carol123",
       name: "陳品妤 (Carol)",
       email: "carol.mkt@company.com",
       role: "MARKETING",
@@ -92,6 +123,8 @@ async function main() {
 
   const supportDavid = await prisma.user.create({
     data: {
+      username: "david_support",
+      password: "david123",
       name: "王建宏 (David)",
       email: "david.support@company.com",
       role: "SUPPORT",
@@ -234,7 +267,7 @@ async function main() {
         source: "Website",
         status: "NEW",
         score: 75,
-        assignedToId: salesNorth.id,
+        assignedToId: salesNorthRep.id,
       },
       {
         name: "劉曉萱",
@@ -296,8 +329,8 @@ async function main() {
     data: { pipelineId: pipeline.id, name: "輸單 Lost", order: 6, color: "#ef4444", probability: 0 },
   });
 
-  console.log("🌱 Seeding Regional Deals...");
-  // North Deals
+  console.log("🌱 Seeding Regional Deals assigned to specific Sales...");
+  // North Deals (Assigned to Alice & Kevin)
   await prisma.deal.create({
     data: {
       title: "宏威智能 - 全集團 CRM 系統建置案",
@@ -308,7 +341,7 @@ async function main() {
       stageId: stage4.id,
       contactId: contact1.id,
       accountId: accNorth1.id,
-      assignedToId: salesNorth.id,
+      assignedToId: salesNorthMgr.id,
       status: "OPEN",
       expectedCloseDate: new Date(Date.now() + 15 * 86400000),
     },
@@ -324,7 +357,7 @@ async function main() {
       stageId: stage3.id,
       contactId: contact2.id,
       accountId: accNorth2.id,
-      assignedToId: salesNorth.id,
+      assignedToId: salesNorthRep.id,
       status: "OPEN",
       expectedCloseDate: new Date(Date.now() + 25 * 86400000),
     },
@@ -444,73 +477,7 @@ async function main() {
     },
   });
 
-  await prisma.ticket.create({
-    data: {
-      ticketNumber: "TICK-2026-003",
-      subject: "高雄工廠設備維修報表欄位自訂需求",
-      description: "工廠巡檢工程師需要新增零件序號自訂欄位。",
-      status: "RESOLVED",
-      priority: "LOW",
-      region: "SOUTH",
-      contactId: contact4.id,
-      accountId: accSouth1.id,
-      assignedToId: supportDavid.id,
-      slaDueAt: new Date(Date.now() - 24 * 3600000),
-      resolvedAt: new Date(Date.now() - 10 * 3600000),
-    },
-  });
-
-  console.log("🌱 Seeding Campaigns & Workflows...");
-  const segment1 = await prisma.segment.create({
-    data: {
-      name: "全區 VIP 核心主管名單",
-      description: "涵蓋北中南與海外各區決策主管",
-      filterType: "DYNAMIC",
-      contactCount: 5,
-    },
-  });
-
-  const template1 = await prisma.emailTemplate.create({
-    data: {
-      name: "2026 數位轉型研討會邀請函",
-      subject: "【專屬貴賓】2026 企業 AI 與數據轉型高峰會",
-      bodyHtml: "<h2>{{contact.name}} 貴賓您好：</h2><p>誠摯邀請您出席年度企業轉型峰會...</p>",
-      variables: "contact.name, contact.title",
-    },
-  });
-
-  await prisma.campaign.create({
-    data: {
-      name: "2026 Q3 企業數位轉型方案推廣 EDM",
-      channel: "EMAIL",
-      status: "SENT",
-      segmentId: segment1.id,
-      templateId: template1.id,
-      subject: "【專屬貴賓席】2026 企業 AI 與數據轉型高峰會",
-      scheduledAt: new Date(Date.now() - 3 * 86400000),
-      sentCount: 320,
-      deliveredCount: 315,
-      openedCount: 210,
-      clickedCount: 95,
-    },
-  });
-
-  await prisma.workflow.create({
-    data: {
-      name: "新 Lead 建立依區域自動指派業務代表",
-      description: "依據客戶所在縣市，自動將商機分配給北部/中部/南部專屬業務主管。",
-      triggerEvent: "NEW_LEAD",
-      conditions: JSON.stringify({ autoAssignByRegion: true }),
-      actions: JSON.stringify([
-        { type: "AUTO_ASSIGN_SALES", note: "按區域分派" },
-        { type: "SEND_WELCOME_EMAIL", note: "發送歡迎信" },
-      ]),
-      isActive: true,
-      executionCount: 24,
-    },
-  });
-
-  console.log("✅ Multi-user & Regional Database successfully seeded!");
+  console.log("✅ Authenticated users & regional data seeded successfully!");
 }
 
 main()

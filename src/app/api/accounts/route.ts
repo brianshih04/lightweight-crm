@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, getEntityScopeFilter } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    const user = await getCurrentUser();
+    const { searchParams } = new URL(request.url);
+    const queryRegion = searchParams.get("region");
+
+    const entityWhere = getEntityScopeFilter(user, queryRegion);
+
     const accounts = await prisma.account.findMany({
+      where: entityWhere,
       include: {
         contacts: true,
         deals: {
@@ -27,8 +35,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
     const body = await request.json();
-    const { name, industry, website, phone, address, customFields } = body;
+    const { name, industry, region, website, phone, address, customFields } = body;
 
     if (!name) {
       return NextResponse.json({ error: "企業公司名稱為必填" }, { status: 400 });
@@ -38,6 +47,7 @@ export async function POST(request: Request) {
       data: {
         name,
         industry,
+        region: region || user?.region || "NORTH",
         website,
         phone,
         address,

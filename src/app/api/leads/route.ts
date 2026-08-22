@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, getLeadScopeFilter, isGMOrAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    const user = await getCurrentUser();
+    const { searchParams } = new URL(request.url);
+    const queryRegion = searchParams.get("region");
+
+    const leadWhere = getLeadScopeFilter(user, queryRegion);
+
     const leads = await prisma.lead.findMany({
+      where: leadWhere,
       include: {
         assignedTo: true,
       },
@@ -21,6 +29,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
     const body = await request.json();
     const { action } = body;
 
@@ -36,7 +45,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "找不到指定的線索" }, { status: 404 });
       }
 
-      // 1. Create or Find Account if company name exists
+      // 1. Create or Find Account
       let account = null;
       if (lead.company) {
         account = await prisma.account.findFirst({
@@ -47,6 +56,7 @@ export async function POST(request: Request) {
             data: {
               name: lead.company,
               phone: lead.phone,
+              region: lead.region || user?.region || "NORTH",
             },
           });
         }
@@ -58,12 +68,13 @@ export async function POST(request: Request) {
           name: lead.name,
           email: lead.email,
           phone: lead.phone,
+          region: lead.region || user?.region || "NORTH",
           accountId: account?.id,
           tags: "由線索轉換, 潛在客戶",
         },
       });
 
-      // 3. Create Deal if dealTitle provided
+      // 3. Create Deal
       let deal = null;
       const defaultPipeline = await prisma.pipeline.findFirst({
         where: { isDefault: true },
@@ -76,17 +87,18 @@ export async function POST(request: Request) {
           data: {
             title: dealTitle || `${lead.company || lead.name} - 新業務機會`,
             value: parseFloat(dealValue) || 0,
+            region: lead.region || user?.region || "NORTH",
             pipelineId: defaultPipeline.id,
             stageId: firstStage.id,
             contactId: contact.id,
             accountId: account?.id,
-            assignedToId: lead.assignedToId,
+            assignedToId: lead.assignedToId || user?.id,
             notes: lead.notes,
           },
         });
       }
 
-      // 4. Update Lead status to CONVERTED
+      // 4. Update Lead status
       await prisma.lead.update({
         where: { id: lead.id },
         data: { status: "CONVERTED" },
@@ -100,6 +112,7 @@ export async function POST(request: Request) {
           contactId: contact.id,
           accountId: account?.id,
           dealId: deal?.id,
+          userId: user?.id,
         },
       });
 
@@ -107,7 +120,7 @@ export async function POST(request: Request) {
     }
 
     // Normal Lead Creation
-    const { name, email, phone, company, source, score, notes, assignedToId } = body;
+    const { name, email, phone, company, source, score, region, notes, assignedToId } = body;
     if (!name) {
       return NextResponse.json({ error: "線索姓名為必填" }, { status: 400 });
     }
@@ -118,10 +131,11 @@ export async function POST(request: Request) {
         email,
         phone,
         company,
+        region: region || user?.region || "NORTH",
         source: source || "Website",
         score: score ? parseInt(score) : 50,
         notes,
-        assignedToId: assignedToId || null,
+        assignedToId: assignedToId || user?.id || null,
       },
     });
 

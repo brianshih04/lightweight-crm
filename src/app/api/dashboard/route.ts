@@ -1,22 +1,33 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // 1. Core KPIs
+    const user = await getCurrentUser();
+    const { searchParams } = new URL(request.url);
+    const queryRegion = searchParams.get("region");
+
+    const dealWhere = getDealScopeFilter(user, queryRegion);
+    const entityWhere = getEntityScopeFilter(user, queryRegion);
+
+    // 1. Core KPIs filtered by user's permission scope
     const [totalContacts, totalAccounts, deals, openTickets, sentCampaigns, activities] =
       await Promise.all([
-        prisma.contact.count(),
-        prisma.account.count(),
+        prisma.contact.count({ where: entityWhere }),
+        prisma.account.count({ where: entityWhere }),
         prisma.deal.findMany({
+          where: dealWhere,
           include: {
             stage: true,
+            assignedTo: true,
           },
         }),
         prisma.ticket.findMany({
           where: {
+            ...entityWhere,
             status: { in: ["OPEN", "IN_PROGRESS", "PENDING"] },
           },
           include: {
@@ -61,7 +72,9 @@ export async function GET() {
     const stages = await prisma.stage.findMany({
       orderBy: { order: "asc" },
       include: {
-        deals: true,
+        deals: {
+          where: dealWhere,
+        },
       },
     });
 
@@ -73,6 +86,8 @@ export async function GET() {
     }));
 
     return NextResponse.json({
+      currentUser: user,
+      isGMOrAdmin: isGMOrAdmin(user),
       kpis: {
         totalContacts,
         totalAccounts,

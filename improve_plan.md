@@ -45,7 +45,7 @@
 - [x] Executive Report 排行榜移除每位業務的完整 assignedDeals 載入，改為 DB `groupBy(assignedToId,status)` 聚合並限制前 20 名；SQLite 與真實 PostgreSQL runtime 均已驗證。
 - [x] Contact 360 拆為最小 overview 與 deals/tickets/activities 三條獨立 cursor API；各分頁預設 25、最大 100 筆，前端提供個別載入更多、錯誤狀態，並維持 contact/deal 區域 scope。
 - [x] 使用者主管循環驗證改為只沿祖先鏈逐層讀取，設 50 層上限並回傳 `MANAGER_HIERARCHY_TOO_DEEP`；cycle、pre-existing cycle、depth limit 皆有單元與安全整合測試。
-- [x] 業務階層明確拆分為總經理（GM）、市場部主管（MARKETING_MANAGER）、區域主管（SALES_MANAGER）與 Sales；新增區域範圍的訂單管理員（ORDER_ADMIN，Sales Assistant），並同步權限、主管任命規則、seed、管理 UI、文件與 PostgreSQL enum migration。
+- [x] 業務階層明確拆分為總經理（GM）、市場部主管（MARKETING_MANAGER）、區域主管（SALES_MANAGER）與 Sales；訂單管理員（ORDER_ADMIN）後續調整為跨全市場訂單支援角色（見下方 2026-08-23 組織導入記錄），並同步權限、主管任命規則、seed、管理 UI、文件與 PostgreSQL enum migration。
 - [x] 清除所有示範業務資料（客戶／商機／工單等），seed 改為只建立人員結構與標準管線；新增 `db:clear-business-data` 保留人員與設定的清理腳本。
 - [x] 匯入實際組織編制：GM Thomas（雙帳號含市場部主管）、三個行銷部（Ivan/Jane/James ＋ Sales）、訂單管理員 Linda/Brenda 掛市場部主管下、客服主管 Kidd（雙帳號含企劃部主管）。
 - [x] 區域槽位重新定義為三個市場＋總部（NORTH=中南美/菲律賓、CENTRAL=美歐/俄印/台灣、SOUTH=俄羅斯/中東、OVERSEAS=總部與其他）：僅改顯示名稱與人員指派，內部 enum 與 schema 不變，報表／人員頁／篩選器同步。
@@ -53,6 +53,8 @@
 - [x] UI 現代化：共用 UI 元件庫（Button/Modal focus-trap/ConfirmDialog/Toast/EmptyState/ErrorBanner/SearchInput debounce/Field）、(app) route group server-side auth gate、登入頁脫離 app 殼層、route-level loading/error/not-found 邊界、401 自動導回登入、API 錯誤信封解析（含 422 欄位訊息）、全部頁面的 mutation 成功／失敗回饋。
 - [x] 商機看板改為真實 @dnd-kit 拖曳（樂觀更新＋失敗回滾＋DragOverlay＋下拉備援），移除換階段整頁重載；儀表板與報表改用 recharts 圖表（階段分佈、工單優先度、分市場長條圖、排行榜進度條），報表摘要文案改為數據驅動。
 - [x] 初始密碼生命週期治理：`User.mustChangePassword` 旗標（SQLite＋PostgreSQL migration）、管理者建立／重設密碼自動標記、`/api/auth/change-password`（驗證舊密碼、12+ 字元、不可與舊密相同、撤銷其他裝置）、未改密前受保護 API 一律 `403 PASSWORD_CHANGE_REQUIRED`、`/change-password` 強制改密頁與登入自動導向；安全整合測試與 Playwright E2E 均涵蓋此流程。
+- [x] 商機資料最小可視（第二輪審查修正）：getDealScopeFilter 對無 deals:read 的角色（MARKETING_MANAGER／MARKETING／SUPPORT）預設拒絕，Dashboard KPI／階段分佈／帳戶總額／聯絡人商機數自動為零並排除商機關聯活動；Contact 360 type=deals 額外要求 deals:read；新增 MARKETING*/SUPPORT 負向資料隔離整合測試；Dashboard 活動範圍與商機範圍一致化（OrderAdmin 全域）。
+- [x] 資料治理補強（第二輪審查修正）：db:clear-business-data 一併清除 IdempotencyRecord 並於 production 預設拒絕執行；seed 清除＋重建改為單一 transaction；巢狀使用者回應改用最小化 nestedUserSelect（id/name/title/region，不含 username/email/部門/時間戳）。
 
 **尚未解除的主要阻斷項**：Git history 機密清理與正式憑證輪替、MFA/SSO、外部 alert channel、正式 PostgreSQL cutover、registry/流量層自動 rollback、排程加密離機備份、擴充各核心流程的瀏覽器 E2E，以及集中式 logs/metrics/traces。
 
@@ -364,7 +366,7 @@ tests/
 **Phase 1 驗收**
 
 - 權限矩陣每一格都有 integration test；deny case 與 allow case都測。
-- SALES 僅能讀/改自己的責任資料；SALES_MANAGER 可管理所屬區域；ORDER_ADMIN 可在所屬區域處理商機／訂單但不可管理帳號；MARKETING_MANAGER 僅管理市場部流程與專員；MARKETING/SUPPORT 只能執行核准動作。
+- SALES 僅能讀/改自己的責任資料；SALES_MANAGER 可管理所屬區域；ORDER_ADMIN 為跨全市場訂單支援（可讀寫所有市場商機，不可管理帳號）；MARKETING_MANAGER 僅管理市場部流程與專員；MARKETING/SUPPORT 只能執行核准動作且不得取得任何商機資料。
 - 停權、改角色、登出全部裝置後，舊 Session 立刻失效。
 - 所有 mutation 產生 actor、action、resource、result、requestId 的 audit record。
 

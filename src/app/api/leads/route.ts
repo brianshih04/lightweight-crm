@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { asDataRegion, getLeadScopeFilter, isGMOrAdmin, isSalesManager, publicUserSelect } from "@/lib/auth";
+import { asDataRegion, getLeadScopeFilter, isGMOrAdmin, isSalesManager, nestedUserSelect } from "@/lib/auth";
 import { requirePermission } from "@/lib/authorization";
 import { recordAuditEvent } from "@/lib/audit";
 import { apiError, apiErrorFromUnknown, paginatedArrayResponse, parseJsonBody, parseQuery } from "@/lib/api-response";
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const leads = await prisma.lead.findMany({
       where: leadWhere,
       include: {
-        assignedTo: { select: publicUserSelect },
+        assignedTo: { select: nestedUserSelect },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,

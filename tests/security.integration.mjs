@@ -487,6 +487,46 @@ async function main() {
   assert.equal(northDashboard.data.kpis.totalPipelineValue, 1000);
   assert.equal(northDashboard.data.pipelineStages.find((stage) => stage.name === "Initial").count, 1);
 
+  // 負向資料隔離：沒有 deals:read 的角色（MARKETING*/SUPPORT）不得取得商機資料
+  for (const [label, cookie] of [
+    ["marketing_manager", marketingManagerCookie],
+    ["support", supportCookie],
+  ]) {
+    const relatedDeals = await request(
+      baseUrl,
+      "GET",
+      `/api/contacts/${contact.data.id}/related?type=deals`,
+      cookie
+    );
+    assert.equal(relatedDeals.status, 403, `${label} 不應可讀取聯絡人商機: ${relatedDeals.text}`);
+
+    const noDealDashboard = await request(baseUrl, "GET", "/api/dashboard", cookie);
+    assert.equal(noDealDashboard.status, 200, noDealDashboard.text);
+    assert.equal(noDealDashboard.data.kpis.openDealsCount, 0, `${label} 商機 KPI 應為零`);
+    assert.equal(noDealDashboard.data.kpis.totalPipelineValue, 0, `${label} 商機總額應為零`);
+    assert.equal(noDealDashboard.data.kpis.wonValue, 0, `${label} 贏單金額應為零`);
+    assert.ok(
+      noDealDashboard.data.pipelineStages.every((stage) => stage.count === 0),
+      `${label} 階段分佈應為零`
+    );
+    assert.ok(
+      noDealDashboard.data.activities.every((activity) => activity.dealId === null),
+      `${label} 活動時間軸不得包含商機關聯活動`
+    );
+  }
+
+  const marketingAccounts = await request(baseUrl, "GET", "/api/accounts?limit=100", marketingManagerCookie);
+  assert.equal(marketingAccounts.status, 200, marketingAccounts.text);
+  assert.ok(
+    marketingAccounts.data.every((entry) => entry.totalDealValue === 0),
+    "市場部角色不得看到帳戶商機總額"
+  );
+  const marketingContacts = await request(baseUrl, "GET", "/api/contacts?search=Scoped", marketingManagerCookie);
+  assert.ok(
+    marketingContacts.data.every((entry) => entry.dealCount === 0),
+    "市場部角色不得看到聯絡人商機數"
+  );
+
   const managerReportCookie = await login("role_manager");
   const managerReport = await request(
     baseUrl,

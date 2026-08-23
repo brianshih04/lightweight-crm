@@ -50,6 +50,8 @@
 
 **實際編制（2026-08-23 起，定義於 `prisma/seed.ts`）**：GM=`thomas`（另有 `thomas_mkt` 市場部主管帳號）；第一行銷部=`ivan`+`maite`（NORTH 第一市場：中南美/菲律賓）；第二行銷部=`jane`+`lauren`（CENTRAL 第二市場：美歐/俄印/台灣）；第三行銷部=`james`+`vivien`（SOUTH 第三市場：俄羅斯/中東）；訂單管理員=`linda`+`brenda`（掛 `thomas_mkt` 下，全市場商機權限）；客服主管=`kidd`（另有 `kidd_planning` 企劃部主管帳號）。兼任兩個職務者比照「一職務一帳號」模式。
 
+> **設計註記（SUPPORT 主管）**：目前沒有獨立的 `SUPPORT_MANAGER` 角色；客服主管由 `SUPPORT` 角色擔任（`canManageUserRole` 允許 SUPPORT→SUPPORT、`MANAGER_ROLES` 含 SUPPORT），實際職級以 `title` 欄位（如「客服部主管」）區分。若未來客服部門擴編且需要權限差異（例如主管可看部門報表），再評估新增角色——那需要同步 PostgreSQL enum migration、權限矩陣與測試。
+
 | Role | Scope | 主要職責與限制 |
 | --- | --- | --- |
 | `ADMIN` | `ALL` | 系統管理、使用者／區域／主管設定、安全稽核；首次 bootstrap 的唯一固定角色。 |
@@ -125,7 +127,10 @@
 * **現象**：在執行 `npx prisma generate`、`npx prisma db push` 或 `npm run db:seed` 時，若 Next.js 伺服器在背景執行，會鎖定 `node_modules/@prisma/client/query_engine-windows.dll.node` 或 `dev.db` 導致 `EPERM` 權限錯誤。
 * **正確處置方式**：
   ```powershell
-  Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+  # 僅終止 CRM 的 node 行程（避免關閉電腦上所有 Node 程式）
+  Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+    Where-Object { $_.CommandLine -like '*E:\Projects\CRM*' -or $_.CommandLine -like '*lightweight-crm*' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
   Start-Sleep -Seconds 1
   npx prisma db push
   # seed 為選擇性步驟：需先依第 6 節設定 DEMO_SEED_PASSWORD 與 DEMO_SEED_CONFIRM=1 才會執行
@@ -171,8 +176,10 @@
 ## 🛠️ 6. 日常維護與快速啟動指令 (Cheat Sheet)
 
 ```powershell
-# 1. 停止所有 Node 相關行程
-Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+# 1. 僅停止 CRM 的 node 行程（避免影響電腦上其他 Node 程式）
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Where-Object { $_.CommandLine -like '*E:\Projects\CRM*' -or $_.CommandLine -like '*lightweight-crm*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
 # 2. 同步資料庫結構與重新產生 Prisma Client
 npx prisma db push
@@ -224,7 +231,7 @@ npm run test:postgres
 npm run test:e2e
 ```
 
-接手修改角色或授權時，至少同步檢查 `src/lib/auth.ts`、`src/lib/permissions.ts`、`src/lib/contracts.ts`、`src/app/api/users/**`、`src/app/settings/users/page.tsx`、`prisma/schema.prisma`、`scripts/generate-postgres-schema.mjs`、`prisma/postgresql/migrations/`、`tests/permissions.test.ts`、`tests/security.integration.mjs` 與本文件群組。
+接手修改角色或授權時，至少同步檢查 `src/lib/auth.ts`、`src/lib/permissions.ts`、`src/lib/contracts.ts`、`src/app/api/users/**`、`src/app/(app)/settings/users/page.tsx`、`prisma/schema.prisma`、`scripts/generate-postgres-schema.mjs`、`prisma/postgresql/migrations/`、`tests/permissions.test.ts`、`tests/security.integration.mjs` 與本文件群組。
 
 ---
 *NexCRM Agent 交接小組 · 2026*

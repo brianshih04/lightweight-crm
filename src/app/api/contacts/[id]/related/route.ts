@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getDealScopeFilter, getEntityScopeFilter, publicUserSelect } from "@/lib/auth";
-import { requirePermission } from "@/lib/authorization";
+import { getDealScopeFilter, getEntityScopeFilter, nestedUserSelect } from "@/lib/auth";
+import { hasPermission, requirePermission } from "@/lib/authorization";
 import { apiError, apiErrorFromUnknown, paginatedArrayResponse, parseQuery } from "@/lib/api-response";
 import { contactRelatedListQuerySchema } from "@/lib/contracts";
 import {
@@ -36,6 +36,10 @@ export async function GET(
     };
 
     if (type === "deals") {
+      // 商機資料額外要求 deals:read，防止僅有 contacts:read 的角色取得商機內容
+      if (!hasPermission(authorization.user, "deals", "read")) {
+        return apiError(request, 403, "FORBIDDEN", "沒有讀取商機資料的權限");
+      }
       const deals = await prisma.deal.findMany({
         where: { contactId: id, ...getDealScopeFilter(authorization.user) },
         include: { stage: true },
@@ -53,7 +57,7 @@ export async function GET(
 
     const activities = await prisma.activity.findMany({
       where: { contactId: id },
-      include: { user: { select: publicUserSelect } },
+      include: { user: { select: nestedUserSelect } },
       ...page,
     });
     return paginatedArrayResponse(request, activities, limit, contactActivityResponseSchema);

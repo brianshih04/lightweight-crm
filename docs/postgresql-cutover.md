@@ -45,7 +45,7 @@ The deploy order is: immutable build → database backup → `migrate deploy` �
 6. Compare source/target counts and Deal totals printed by the importer, then start the PostgreSQL build.
 7. Verify `/api/health`, login, role isolation, a read-only dashboard/report query and one reversible test mutation.
 
-The role smoke test must include: `MARKETING_MANAGER` with `ALL` scope, `SALES_MANAGER` with a named region, `ORDER_ADMIN` under that regional manager, and `SALES` under the same region. Confirm Order Admin Deal access is regional and that user administration, executive reports and audit remain denied.
+The role smoke test must include: `MARKETING_MANAGER` with `ALL` scope, `SALES_MANAGER` with a named region, `ORDER_ADMIN` under the marketing manager, and `SALES` under the same region. Confirm Order Admin deal access is all-market (cross-region read/write, org home region is informational only) and that user administration, executive reports and audit remain denied.
 
 The importer is atomic and preserves primary keys, timestamps, password hashes and relationships. It refuses an already populated target.
 

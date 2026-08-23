@@ -43,6 +43,15 @@ export const publicUserSelect = {
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
+// 巢狀回應（商機/工單負責人、活動記錄人）的最小欄位：僅揭露顯示必需資訊，
+// 不含 username、email、部門、主管與時間戳
+export const nestedUserSelect = {
+  id: true,
+  name: true,
+  title: true,
+  region: true,
+} satisfies Prisma.UserSelect;
+
 export const AUTH_COOKIE_NAME = "crm_auth_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -261,7 +270,9 @@ export function getDealScopeFilter(
     };
   }
 
-  return user.region !== "ALL" ? { region: user.region } : {};
+  // MARKETING_MANAGER／MARKETING／SUPPORT 沒有 deals:read 權限；
+  // 預設拒絕，避免 Dashboard／Contact 360／帳戶摘要等聚合查詢外洩商機資料
+  return { id: "__unauthorized__" };
 }
 
 /**

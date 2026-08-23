@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { asDataRegion, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isOrderAdmin, isSalesManager, publicUserSelect } from "@/lib/auth";
+import { asDataRegion, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isOrderAdmin, isSalesManager, nestedUserSelect } from "@/lib/auth";
 import { requirePermission } from "@/lib/authorization";
 import { recordAuditEvent } from "@/lib/audit";
 import { apiError, apiErrorFromUnknown, apiSuccess, parseJsonBody, parseQuery } from "@/lib/api-response";
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         stage: true,
         contact: true,
         account: true,
-        assignedTo: { select: publicUserSelect },
+        assignedTo: { select: nestedUserSelect },
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
             stage: true,
             contact: true,
             account: true,
-            assignedTo: { select: publicUserSelect },
+            assignedTo: { select: nestedUserSelect },
           },
         });
         await tx.activity.create({

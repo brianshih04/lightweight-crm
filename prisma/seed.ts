@@ -61,31 +61,32 @@ async function main() {
   }
   const passwordHash = await hashPassword(demoPassword);
 
-  console.log("🌱 Cleaning up database...");
-  await prisma.activity.deleteMany({});
-  await prisma.ticketMessage.deleteMany({});
-  await prisma.ticket.deleteMany({});
-  await prisma.deal.deleteMany({});
-  await prisma.stage.deleteMany({});
-  await prisma.pipeline.deleteMany({});
-  await prisma.lead.deleteMany({});
-  await prisma.contact.deleteMany({});
-  await prisma.account.deleteMany({});
-  await prisma.workflowLog.deleteMany({});
-  await prisma.workflow.deleteMany({});
-  await prisma.campaign.deleteMany({});
-  await prisma.emailTemplate.deleteMany({});
-  await prisma.segment.deleteMany({});
-  await prisma.authSession.deleteMany({});
-  await prisma.user.deleteMany({});
+  console.log("🌱 清除並重建（單一 transaction，失敗即全部回滾）...");
+  await prisma.$transaction(async (tx) => {
+  await tx.activity.deleteMany({});
+  await tx.ticketMessage.deleteMany({});
+  await tx.ticket.deleteMany({});
+  await tx.deal.deleteMany({});
+  await tx.stage.deleteMany({});
+  await tx.pipeline.deleteMany({});
+  await tx.lead.deleteMany({});
+  await tx.contact.deleteMany({});
+  await tx.account.deleteMany({});
+  await tx.workflowLog.deleteMany({});
+  await tx.workflow.deleteMany({});
+  await tx.campaign.deleteMany({});
+  await tx.emailTemplate.deleteMany({});
+  await tx.segment.deleteMany({});
+  await tx.authSession.deleteMany({});
+  await tx.user.deleteMany({});
 
   console.log("🌱 Seeding personnel structure (roles, regions, hierarchy)...");
   // 系統管理員僅存在於隔離的 demo DB；正式環境請使用首次啟用流程建立 ADMIN。
-  await prisma.user.create({
+  await tx.user.create({
     data: {
       username: "admin",
       password: passwordHash,
-        mustChangePassword: true,
+      mustChangePassword: true,
       name: "系統管理員 (Admin)",
       email: "admin@company.com",
       role: "ADMIN",
@@ -95,7 +96,7 @@ async function main() {
     },
   });
 
-  const gm = await prisma.user.create({
+  const gm = await tx.user.create({
     data: {
       username: ORG_STRUCTURE.gm.username,
       password: passwordHash,
@@ -109,7 +110,7 @@ async function main() {
     },
   });
 
-  const marketingManager = await prisma.user.create({
+  const marketingManager = await tx.user.create({
     data: {
       username: ORG_STRUCTURE.marketingManager.username,
       password: passwordHash,
@@ -125,7 +126,7 @@ async function main() {
   });
 
   for (const team of ORG_STRUCTURE.salesTeams) {
-    const manager = await prisma.user.create({
+    const manager = await tx.user.create({
       data: {
         username: team.manager.username,
         password: passwordHash,
@@ -141,7 +142,7 @@ async function main() {
     });
 
     for (const rep of team.reps) {
-      await prisma.user.create({
+      await tx.user.create({
         data: {
           username: rep.username,
           password: passwordHash,
@@ -159,7 +160,7 @@ async function main() {
   }
 
   for (const orderAdmin of ORG_STRUCTURE.orderAdmins) {
-    await prisma.user.create({
+    await tx.user.create({
       data: {
         username: orderAdmin.username,
         password: passwordHash,
@@ -175,7 +176,7 @@ async function main() {
     });
   }
 
-  await prisma.user.create({
+  await tx.user.create({
     data: {
       username: ORG_STRUCTURE.supportManager.username,
       password: passwordHash,
@@ -190,7 +191,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  await tx.user.create({
     data: {
       username: ORG_STRUCTURE.planningManager.username,
       password: passwordHash,
@@ -206,7 +207,7 @@ async function main() {
   });
 
   console.log("🌱 Seeding default sales pipeline & stages...");
-  const pipeline = await prisma.pipeline.create({
+  const pipeline = await tx.pipeline.create({
     data: {
       name: "標準企業銷售管線 (全區共用)",
       isDefault: true,
@@ -222,8 +223,10 @@ async function main() {
     { name: "輸單 Lost", order: 6, color: "#ef4444", probability: 0 },
   ];
   for (const stage of stageDefinitions) {
-    await prisma.stage.create({ data: { pipelineId: pipeline.id, ...stage } });
+    await tx.stage.create({ data: { pipelineId: pipeline.id, ...stage } });
   }
+
+    });
 
   console.log("✅ Personnel structure and default pipeline seeded (no demo business data).");
 }

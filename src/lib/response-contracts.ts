@@ -259,7 +259,7 @@ export const contactDetailResponseSchema = contactResponseSchema.extend({
 
 export const contactDealResponseSchema = dealResponseSchema.extend({ stage: stageResponseSchema });
 export const contactActivityResponseSchema = activityResponseSchema.extend({
-  user: publicUserResponseSchema.nullable(),
+  user: userSummaryResponseSchema.nullable(),
 });
 
 export const contactWithAccountResponseSchema = contactResponseSchema.extend({
@@ -267,14 +267,14 @@ export const contactWithAccountResponseSchema = contactResponseSchema.extend({
 });
 
 export const leadListItemResponseSchema = leadResponseSchema.extend({
-  assignedTo: publicUserResponseSchema.nullable(),
+  assignedTo: userSummaryResponseSchema.nullable(),
 });
 
 export const dealWithRelationsResponseSchema = dealResponseSchema.extend({
   stage: stageResponseSchema,
   contact: contactResponseSchema.nullable(),
   account: accountResponseSchema.nullable(),
-  assignedTo: publicUserResponseSchema.nullable(),
+  assignedTo: userSummaryResponseSchema.nullable(),
 });
 
 export const dealUpdateResponseSchema = dealResponseSchema.extend({
@@ -299,12 +299,12 @@ export const ticketWithCustomerResponseSchema = ticketResponseSchema.extend({
 });
 
 export const ticketListItemResponseSchema = ticketWithCustomerResponseSchema.extend({
-  assignedTo: publicUserResponseSchema.nullable(),
+  assignedTo: userSummaryResponseSchema.nullable(),
   messages: z.array(ticketMessageResponseSchema),
 });
 
 export const ticketDetailResponseSchema = ticketWithCustomerResponseSchema.extend({
-  assignedTo: publicUserResponseSchema.nullable(),
+  assignedTo: userSummaryResponseSchema.nullable(),
   messages: z.array(ticketMessageResponseSchema),
 });
 
@@ -414,7 +414,7 @@ export const dashboardResponseSchema = z.object({
   activities: z.array(activityResponseSchema.extend({
     contact: contactResponseSchema.nullable(),
     deal: dealResponseSchema.nullable(),
-    user: publicUserResponseSchema.nullable(),
+    user: userSummaryResponseSchema.nullable(),
   })),
 });
 

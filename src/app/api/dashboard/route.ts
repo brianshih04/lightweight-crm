@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, publicUserSelect } from "@/lib/auth";
+import { getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isOrderAdmin, nestedUserSelect } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/authorization";
 import { apiErrorFromUnknown, apiSuccess, parseQuery } from "@/lib/api-response";
 import { regionFilterQuerySchema } from "@/lib/contracts";
@@ -17,18 +17,27 @@ export async function GET(request: Request) {
     if (!query.ok) return query.response;
     const queryRegion = query.data.region;
 
+    // 沒有 deals:read 的角色（MARKETING*/SUPPORT）在 getDealScopeFilter 即為 deny，
+    // 商機 KPI 與階段分佈自然為零；這裡只再排除商機關聯活動，工單／行銷／客戶數照常顯示
+    const canReadDeals = hasPermission(user, "deals", "read");
     const dealWhere = getDealScopeFilter(user, queryRegion);
     const entityWhere = getEntityScopeFilter(user, queryRegion);
-    const activityWhere = isGMOrAdmin(user) || user.region === "ALL"
-      ? {}
+    // 活動範圍與商機範圍一致：GM/Admin/OrderAdmin 為全域，其餘依區域
+    const activityGlobal = isGMOrAdmin(user) || isOrderAdmin(user) || user.region === "ALL";
+    const regionActivityConditions = [
+      { contact: { region: user.region } },
+      { account: { region: user.region } },
+      { ticket: { region: user.region } },
+      ...(user.role === "SALES"
+        ? [{ deal: { region: user.region, assignedToId: user.id } }, { userId: user.id }]
+        : [{ deal: { region: user.region } }]),
+    ];
+    const activityWhere = activityGlobal
+      ? (canReadDeals ? {} : { dealId: null })
       : {
-          OR: [
-            { contact: { region: user.region } },
-            { account: { region: user.region } },
-            { ticket: { region: user.region } },
-            ...(user.role === "SALES"
-              ? [{ deal: { region: user.region, assignedToId: user.id } }, { userId: user.id }]
-              : [{ deal: { region: user.region } }]),
+          AND: [
+            ...(canReadDeals ? [] : [{ dealId: null }]),
+            { OR: regionActivityConditions },
           ],
         };
 
@@ -63,7 +72,7 @@ export async function GET(request: Request) {
           include: {
             contact: true,
             deal: true,
-            user: { select: publicUserSelect },
+            user: { select: nestedUserSelect },
           },
           orderBy: { createdAt: "desc" },
           take: 6,

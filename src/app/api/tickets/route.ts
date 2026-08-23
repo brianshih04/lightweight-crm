@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getEntityScopeFilter, publicUserSelect } from "@/lib/auth";
+import { getEntityScopeFilter, nestedUserSelect } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/authorization";
 import { recordAuditEvent } from "@/lib/audit";
 import { apiError, apiErrorFromUnknown, apiSuccess, paginatedArrayResponse, parseJsonBody, parseQuery } from "@/lib/api-response";
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       include: {
         contact: true,
         account: true,
-        assignedTo: { select: publicUserSelect },
+        assignedTo: { select: nestedUserSelect },
         messages: {
           where: hasPermission(authorization.user, "tickets", "update") ? {} : { isInternal: false },
           orderBy: { createdAt: "desc" },

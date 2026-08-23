@@ -1,6 +1,6 @@
 # PostgreSQL schema and migrations
 
-> **Current state (2026-08-23)**: generated schema and clean migration/runtime verification pass. Applied migration `20260823000200_add_business_roles` adds `MARKETING_MANAGER` and `ORDER_ADMIN` to the native `UserRole` enum. The business hierarchy is GM → Marketing Manager / Regional Manager → Sales, with regional Order Admin as Sales Assistant; `ADMIN` remains a separate platform role.
+> **Current state (2026-08-23)**: generated schema and clean migration/runtime verification pass. Applied migration `20260823000200_add_business_roles` adds `MARKETING_MANAGER` and `ORDER_ADMIN` to the native `UserRole` enum. The business hierarchy is GM → Marketing Manager / Regional Manager → Sales, with Order Admin as an all-market order-support role (org-charted under the marketing manager); `ADMIN` remains a separate platform role.
 
 `schema.prisma` is generated from `../schema.prisma`; do not edit it directly. The generator changes the provider to PostgreSQL and promotes role, region and lifecycle status strings to native PostgreSQL enums.
 

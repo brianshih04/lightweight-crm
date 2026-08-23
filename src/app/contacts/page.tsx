@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Users, Search, Plus, Mail, Phone, Building2, Tag, ChevronRight, X } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<any[]>([]);
@@ -23,8 +24,7 @@ export default function ContactsPage() {
 
   const fetchContacts = () => {
     setLoading(true);
-    fetch(`/api/contacts?search=${encodeURIComponent(search)}`)
-      .then((res) => res.json())
+    fetchAllPages<any>(`/api/contacts?search=${encodeURIComponent(search)}`)
       .then((data) => {
         setContacts(Array.isArray(data) ? data : []);
         setLoading(false);
@@ -40,8 +40,7 @@ export default function ContactsPage() {
   }, [search]);
 
   useEffect(() => {
-    fetch("/api/accounts")
-      .then((res) => res.json())
+    fetchAllPages<any>("/api/accounts")
       .then((data) => setAccounts(Array.isArray(data) ? data : []));
   }, []);
 
@@ -194,11 +193,11 @@ export default function ContactsPage() {
                     <td className="px-6 py-4">
                       <div className="text-xs text-slate-500 space-x-2">
                         <span>
-                          商機: <strong className="text-slate-800">{contact.deals?.length || 0}</strong>
+                          商機: <strong className="text-slate-800">{contact.dealCount || 0}</strong>
                         </span>
                         <span>·</span>
                         <span>
-                          工單: <strong className="text-slate-800">{contact.tickets?.length || 0}</strong>
+                          工單: <strong className="text-slate-800">{contact.ticketCount || 0}</strong>
                         </span>
                       </div>
                     </td>

@@ -15,12 +15,39 @@ import {
   XCircle,
 } from "lucide-react";
 import { formatCurrency, STAGE_COLORS } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
+
+function mergePipelinePage(current: any, incoming: any) {
+  const mergeOne = (existing: any, page: any) => ({
+    ...existing,
+    ...page,
+    stages: existing.stages.map((stage: any) => {
+      const nextStage = page.stages.find((candidate: any) => candidate.id === stage.id);
+      return nextStage ? { ...nextStage, deals: [...stage.deals, ...nextStage.deals] } : stage;
+    }),
+  });
+
+  return {
+    ...current,
+    ...incoming,
+    pipelines: current.pipelines.map((pipeline: any) => {
+      const nextPipeline = incoming.pipelines.find((candidate: any) => candidate.id === pipeline.id);
+      return nextPipeline ? mergeOne(pipeline, nextPipeline) : pipeline;
+    }),
+    activePipeline: current.activePipeline && incoming.activePipeline
+      ? mergeOne(current.activePipeline, incoming.activePipeline)
+      : incoming.activePipeline || current.activePipeline,
+  };
+}
 
 export default function SalesPipelinePage() {
   const [pipelineData, setPipelineData] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
 
   // New Deal Form State
@@ -33,26 +60,32 @@ export default function SalesPipelinePage() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchPipeline = () => {
-    fetch("/api/deals")
-      .then((res) => res.json())
-      .then((data) => {
-        setPipelineData(data);
-        if (data.activePipeline?.stages?.length > 0 && !stageId) {
-          setStageId(data.activePipeline.stages[0].id);
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
+  const fetchPipeline = async (cursor?: string) => {
+    if (cursor) setLoadingMore(true);
+    else setLoading(true);
+    setLoadError("");
+    try {
+      const response = await fetch(`/api/deals?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      if (!response.ok) throw new Error(`Deals request failed: ${response.status}`);
+      const data = await response.json();
+      setNextCursor(response.headers.get("X-Next-Cursor"));
+      setPipelineData((current: any) => cursor && current ? mergePipelinePage(current, data) : data);
+      if (data.activePipeline?.stages?.length > 0 && !stageId) {
+        setStageId(data.activePipeline.stages[0].id);
+      }
+    } catch (error) {
+      console.error(error);
+      setLoadError("無法載入商機看板，請稍後再試。");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   };
 
   useEffect(() => {
     fetchPipeline();
-    fetch("/api/contacts").then((r) => r.json()).then((d) => setContacts(Array.isArray(d) ? d : []));
-    fetch("/api/accounts").then((r) => r.json()).then((d) => setAccounts(Array.isArray(d) ? d : []));
+    fetchAllPages<any>("/api/contacts").then(setContacts).catch(console.error);
+    fetchAllPages<any>("/api/accounts").then(setAccounts).catch(console.error);
   }, []);
 
   const handleStageChange = async (dealId: string, targetStageId: string, targetStageName: string) => {
@@ -135,7 +168,7 @@ export default function SalesPipelinePage() {
             商機銷售看板 (Sales Kanban)
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            管線總值：<strong className="text-indigo-600 font-semibold">{formatCurrency(totalPipelineValue)}</strong> · 視覺化推動各階段成交進展。
+            已載入商機總值：<strong className="text-indigo-600 font-semibold">{formatCurrency(totalPipelineValue)}</strong> · 視覺化推動各階段成交進展。
           </p>
         </div>
 
@@ -238,6 +271,20 @@ export default function SalesPipelinePage() {
           );
         })}
       </div>
+
+      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
+      {nextCursor && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => fetchPipeline(nextCursor)}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
+          >
+            {loadingMore ? "載入中..." : "載入更多商機"}
+          </button>
+        </div>
+      )}
 
       {/* Create Deal Modal */}
       {showModal && (

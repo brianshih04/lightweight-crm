@@ -17,6 +17,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { REGIONS } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
 
 export default function UsersManagementPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -50,8 +51,7 @@ export default function UsersManagementPage() {
 
   const fetchUsers = () => {
     setLoading(true);
-    fetch("/api/users")
-      .then((res) => res.json())
+    fetchAllPages<any>("/api/users")
       .then((data) => {
         setUsers(Array.isArray(data) ? data : []);
         setLoading(false);
@@ -179,7 +179,7 @@ export default function UsersManagementPage() {
   const isGM = currentUser?.role === "GM";
   const isFullManager = isAdmin || isGM;
 
-  const managers = users.filter((u) => u.role === "GM" || u.role === "SALES_MANAGER" || u.role === "ADMIN");
+  const managers = users.filter((u) => ["GM", "MARKETING_MANAGER", "SALES_MANAGER", "ADMIN"].includes(u.role));
   const filteredUsers = filterRegion === "ALL" ? users : users.filter((u) => u.region === filterRegion);
 
   return (
@@ -198,7 +198,7 @@ export default function UsersManagementPage() {
             人員帳號與負責區域管理 (Personnel & Territory Management)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Admin 系統管理者可在此建立所有成員帳號、分配各 Sales 負責區域、指派主管匯報階層與管理登入密碼。
+            Admin 系統管理者可在此建立成員帳號，配置「總經理／市場部主管／區域主管／Sales」階層與訂單管理員支援角色。
           </p>
         </div>
 
@@ -275,6 +275,7 @@ export default function UsersManagementPage() {
                   const isUserAdmin = user.role === "ADMIN";
                   const isUserGM = user.role === "GM";
                   const isUserMgr = user.role === "SALES_MANAGER";
+                  const isUserMarketingMgr = user.role === "MARKETING_MANAGER";
 
                   return (
                     <tr key={user.id} className="hover:bg-slate-50/70 transition">
@@ -286,6 +287,8 @@ export default function UsersManagementPage() {
                                 ? "bg-rose-600"
                                 : isUserGM
                                 ? "bg-amber-600"
+                                : isUserMarketingMgr
+                                ? "bg-emerald-600"
                                 : isUserMgr
                                 ? "bg-indigo-600"
                                 : "bg-slate-600"
@@ -314,13 +317,17 @@ export default function UsersManagementPage() {
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
                             <Award className="w-3 h-3 text-amber-600" /> 總經理 (GM)
                           </span>
+                        ) : isUserMarketingMgr ? (
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            市場部主管 (Marketing Manager)
+                          </span>
                         ) : isUserMgr ? (
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            業務處主管 (Manager)
+                            區域主管 (Regional Manager)
                           </span>
                         ) : (
                           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
-                            {user.role === "SALES" ? "業務代表 (Sales)" : user.role === "MARKETING" ? "行銷專員" : "客服專員"}
+                            {user.role === "SALES" ? "Sales" : user.role === "ORDER_ADMIN" ? "訂單管理員 (Sales Assistant)" : user.role === "MARKETING" ? "市場部專員" : "客服專員"}
                           </span>
                         )}
                       </td>
@@ -464,11 +471,13 @@ export default function UsersManagementPage() {
                     onChange={(e) => setRole(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 bg-white"
                   >
-                    <option value="SALES">業務代表 (Sales Rep - 僅限負責區域)</option>
-                    <option value="SALES_MANAGER">業務處主管 (Sales Manager - 管轄全區業務)</option>
+                    <option value="SALES">Sales (負責所屬區域)</option>
+                    <option value="ORDER_ADMIN">訂單管理員 (Sales Assistant)</option>
+                    <option value="SALES_MANAGER">區域主管 (Regional Manager)</option>
+                    <option value="MARKETING_MANAGER">市場部主管 (Marketing Manager)</option>
                     <option value="GM">總經理 (GM - 全域決策分析)</option>
                     <option value="ADMIN">系統管理員 (Admin - 系統全管理)</option>
-                    <option value="MARKETING">行銷專員 (Marketing)</option>
+                    <option value="MARKETING">市場部專員 (Marketing)</option>
                     <option value="SUPPORT">客服專員 (Customer Support)</option>
                   </select>
                 </div>
@@ -598,11 +607,13 @@ export default function UsersManagementPage() {
                     onChange={(e) => setEditRole(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white"
                   >
-                    <option value="SALES">業務代表 (Sales)</option>
-                    <option value="SALES_MANAGER">業務處主管 (Sales Manager)</option>
+                    <option value="SALES">Sales</option>
+                    <option value="ORDER_ADMIN">訂單管理員 (Sales Assistant)</option>
+                    <option value="SALES_MANAGER">區域主管 (Regional Manager)</option>
+                    <option value="MARKETING_MANAGER">市場部主管 (Marketing Manager)</option>
                     <option value="GM">總經理 (GM)</option>
                     <option value="ADMIN">系統管理員 (Admin)</option>
-                    <option value="MARKETING">行銷專員</option>
+                    <option value="MARKETING">市場部專員</option>
                     <option value="SUPPORT">客服專員</option>
                   </select>
                 </div>

@@ -16,6 +16,7 @@ import {
   Filter,
 } from "lucide-react";
 import { formatRelativeTime, PRIORITY_CONFIG, TICKET_STATUS_CONFIG } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<any[]>([]);
@@ -35,8 +36,7 @@ export default function TicketsPage() {
 
   const fetchTickets = () => {
     setLoading(true);
-    fetch(`/api/tickets?status=${statusFilter}&priority=${priorityFilter}`)
-      .then((res) => res.json())
+    fetchAllPages<any>(`/api/tickets?status=${statusFilter}&priority=${priorityFilter}`)
       .then((data) => {
         setTickets(Array.isArray(data) ? data : []);
         setLoading(false);
@@ -52,8 +52,8 @@ export default function TicketsPage() {
   }, [statusFilter, priorityFilter]);
 
   useEffect(() => {
-    fetch("/api/contacts").then((r) => r.json()).then((d) => setContacts(Array.isArray(d) ? d : []));
-    fetch("/api/accounts").then((r) => r.json()).then((d) => setAccounts(Array.isArray(d) ? d : []));
+    fetchAllPages<any>("/api/contacts").then(setContacts).catch(console.error);
+    fetchAllPages<any>("/api/accounts").then(setAccounts).catch(console.error);
   }, []);
 
   const handleCreateTicket = async (e: React.FormEvent) => {

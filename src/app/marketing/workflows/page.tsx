@@ -17,6 +17,9 @@ import { formatRelativeTime } from "@/lib/utils";
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
 
   // Form state
@@ -25,18 +28,23 @@ export default function WorkflowsPage() {
   const [triggerEvent, setTriggerEvent] = useState("NEW_LEAD");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchWorkflows = () => {
-    setLoading(true);
-    fetch("/api/marketing/workflows")
-      .then((res) => res.json())
-      .then((data) => {
-        setWorkflows(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
+  const fetchWorkflows = async (cursor?: string) => {
+    if (cursor) setLoadingMore(true);
+    else setLoading(true);
+    setLoadError("");
+    try {
+      const response = await fetch(`/api/marketing/workflows?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      if (!response.ok) throw new Error(`Workflows request failed: ${response.status}`);
+      const result = await response.json();
+      setNextCursor(response.headers.get("X-Next-Cursor"));
+      setWorkflows((current) => cursor ? [...current, ...(Array.isArray(result) ? result : [])] : (Array.isArray(result) ? result : []));
+    } catch (error) {
+      console.error(error);
+      setLoadError("無法載入自動化流程，請稍後再試。");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   };
 
   useEffect(() => {
@@ -198,6 +206,20 @@ export default function WorkflowsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
+      {nextCursor && !loading && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => fetchWorkflows(nextCursor)}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
+          >
+            {loadingMore ? "載入中..." : "載入更多流程"}
+          </button>
         </div>
       )}
 

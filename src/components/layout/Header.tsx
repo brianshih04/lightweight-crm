@@ -28,7 +28,7 @@ export function Header() {
       .then((data) => {
         if (data.authenticated && data.user) {
           setCurrentUser(data.user);
-          if (data.user.role === "SALES_MANAGER" || data.user.role === "SALES") {
+          if (["SALES_MANAGER", "SALES", "ORDER_ADMIN"].includes(data.user.role)) {
             setSelectedRegion(data.user.region);
           }
         }
@@ -36,9 +36,13 @@ export function Header() {
       .catch(console.error);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = async (allDevices = false) => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: allDevices ? { "Content-Type": "application/json" } : undefined,
+        body: allDevices ? JSON.stringify({ allDevices: true }) : undefined,
+      });
       window.location.href = "/login";
     } catch (err) {
       console.error(err);
@@ -121,7 +125,7 @@ export function Header() {
                     ? "bg-amber-100 text-amber-800 border-amber-200"
                     : "bg-indigo-50 text-indigo-700 border-indigo-200"
                 }`}>
-                  {isAdmin ? "系統管理者" : isGM ? "總經理" : currentUser?.role === "SALES_MANAGER" ? "業務主管" : "業務代表"}
+                  {isAdmin ? "系統管理者" : isGM ? "總經理" : currentUser?.role === "MARKETING_MANAGER" ? "市場部主管" : currentUser?.role === "SALES_MANAGER" ? "區域主管" : currentUser?.role === "ORDER_ADMIN" ? "訂單管理員" : currentUser?.role === "SALES" ? "Sales" : currentUser?.role}
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 block leading-tight">
@@ -138,7 +142,7 @@ export function Header() {
                 <p className="font-bold text-slate-900">{currentUser?.name}</p>
                 <p className="text-slate-500 text-[11px]">{currentUser?.email}</p>
                 <div className="mt-1 pt-1 border-t border-slate-200/60 text-[10px] text-slate-400">
-                  角色權限：{isAdmin ? "系統管理者 (Admin)" : isGM ? "總經理 (GM)" : currentUser?.role}
+                  角色權限：{isAdmin ? "系統管理者 (Admin)" : isGM ? "總經理 (GM)" : currentUser?.role === "MARKETING_MANAGER" ? "市場部主管" : currentUser?.role === "SALES_MANAGER" ? "區域主管" : currentUser?.role === "ORDER_ADMIN" ? "訂單管理員" : currentUser?.role === "SALES" ? "Sales" : currentUser?.role}
                 </div>
               </div>
 
@@ -164,7 +168,15 @@ export function Header() {
                 </Link>
 
                 <button
-                  onClick={handleLogout}
+                  onClick={() => handleLogout(true)}
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span>登出所有裝置</span>
+                </button>
+
+                <button
+                  onClick={() => handleLogout(false)}
                   className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition"
                 >
                   <LogOut className="w-4 h-4" />

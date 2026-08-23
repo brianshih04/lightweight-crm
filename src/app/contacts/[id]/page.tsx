@@ -9,22 +9,34 @@ import {
   Mail,
   Phone,
   Tag,
-  DollarSign,
   Headset,
-  Calendar,
-  Plus,
   Send,
-  MessageSquare,
   Clock,
   Briefcase,
 } from "lucide-react";
-import { formatCurrency, formatRelativeTime, STAGE_COLORS, TICKET_STATUS_CONFIG } from "@/lib/utils";
+import { formatCurrency, formatRelativeTime, TICKET_STATUS_CONFIG } from "@/lib/utils";
+
+type RelatedType = "deals" | "tickets" | "activities";
+
+async function fetchRelatedPage(id: string, type: RelatedType, cursor?: string) {
+  const response = await fetch(
+    `/api/contacts/${id}/related?type=${type}&limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+  );
+  if (!response.ok) throw new Error(`${type} request failed: ${response.status}`);
+  return { items: await response.json(), nextCursor: response.headers.get("X-Next-Cursor") };
+}
 
 export default function ContactDetailPage() {
   const params = useParams();
   const id = params.id as string;
 
   const [contact, setContact] = useState<any>(null);
+  const [deals, setDeals] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [nextCursors, setNextCursors] = useState<Record<RelatedType, string | null>>({ deals: null, tickets: null, activities: null });
+  const [relatedLoading, setRelatedLoading] = useState<RelatedType | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"TIMELINE" | "DEALS" | "TICKETS">("TIMELINE");
 
@@ -34,17 +46,51 @@ export default function ContactDetailPage() {
   const [noteContent, setNoteContent] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  const fetchContact = () => {
-    fetch(`/api/contacts/${id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setContact(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
+  const fetchContact = async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [overviewResponse, dealPage, ticketPage, activityPage] = await Promise.all([
+        fetch(`/api/contacts/${id}`),
+        fetchRelatedPage(id, "deals"),
+        fetchRelatedPage(id, "tickets"),
+        fetchRelatedPage(id, "activities"),
+      ]);
+      if (!overviewResponse.ok) throw new Error(`Contact request failed: ${overviewResponse.status}`);
+      setContact(await overviewResponse.json());
+      setDeals(dealPage.items);
+      setTickets(ticketPage.items);
+      setActivities(activityPage.items);
+      setNextCursors({
+        deals: dealPage.nextCursor,
+        tickets: ticketPage.nextCursor,
+        activities: activityPage.nextCursor,
       });
+    } catch (error) {
+      console.error(error);
+      setLoadError("無法載入聯絡人 360 資料，請稍後再試。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMore = async (type: RelatedType) => {
+    const cursor = nextCursors[type];
+    if (!cursor) return;
+    setRelatedLoading(type);
+    setLoadError("");
+    try {
+      const page = await fetchRelatedPage(id, type, cursor);
+      if (type === "deals") setDeals((current) => [...current, ...page.items]);
+      else if (type === "tickets") setTickets((current) => [...current, ...page.items]);
+      else setActivities((current) => [...current, ...page.items]);
+      setNextCursors((current) => ({ ...current, [type]: page.nextCursor }));
+    } catch (error) {
+      console.error(error);
+      setLoadError("無法載入更多資料，請稍後再試。");
+    } finally {
+      setRelatedLoading(null);
+    }
   };
 
   useEffect(() => {
@@ -144,7 +190,7 @@ export default function ContactDetailPage() {
             )}
             <div className="bg-slate-50 px-3 py-2 rounded-lg border border-slate-200/60">
               <span className="text-slate-400 block text-[10px]">商機總數</span>
-              <span className="font-semibold text-indigo-600">{contact.deals?.length || 0} 筆</span>
+              <span className="font-semibold text-indigo-600">{contact.dealCount || 0} 筆</span>
             </div>
           </div>
         </div>
@@ -172,7 +218,7 @@ export default function ContactDetailPage() {
           }`}
         >
           <Briefcase className="w-4 h-4" />
-          關聯商機 ({contact.deals?.length || 0})
+          關聯商機 ({contact.dealCount || 0})
         </button>
         <button
           onClick={() => setActiveTab("TICKETS")}
@@ -183,7 +229,7 @@ export default function ContactDetailPage() {
           }`}
         >
           <Headset className="w-4 h-4" />
-          售後工單 ({contact.tickets?.length || 0})
+          售後工單 ({contact.ticketCount || 0})
         </button>
       </div>
 
@@ -247,7 +293,7 @@ export default function ContactDetailPage() {
 
             {/* Timeline Stream */}
             <div className="space-y-3">
-              {contact.activities?.map((act: any) => (
+              {activities.map((act: any) => (
                 <div
                   key={act.id}
                   className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-start gap-3.5"
@@ -275,6 +321,19 @@ export default function ContactDetailPage() {
                   </div>
                 </div>
               ))}
+              {activities.length === 0 && (
+                <div className="py-10 text-center text-sm text-slate-400">尚無互動紀錄</div>
+              )}
+              {nextCursors.activities && (
+                <button
+                  type="button"
+                  onClick={() => loadMore("activities")}
+                  disabled={relatedLoading === "activities"}
+                  className="w-full py-2 text-xs font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
+                >
+                  {relatedLoading === "activities" ? "載入中..." : "載入更多互動紀錄"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -330,7 +389,7 @@ export default function ContactDetailPage() {
       {/* Deals Tab */}
       {activeTab === "DEALS" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          {contact.deals?.length === 0 ? (
+          {deals.length === 0 ? (
             <div className="py-12 text-center text-sm text-slate-400">尚無關聯商機</div>
           ) : (
             <table className="w-full text-left text-sm">
@@ -343,7 +402,7 @@ export default function ContactDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {contact.deals.map((deal: any) => (
+                {deals.map((deal: any) => (
                   <tr key={deal.id}>
                     <td className="px-6 py-4 font-semibold text-slate-900">{deal.title}</td>
                     <td className="px-6 py-4 font-bold text-indigo-600">{formatCurrency(deal.value)}</td>
@@ -360,13 +419,23 @@ export default function ContactDetailPage() {
               </tbody>
             </table>
           )}
+          {nextCursors.deals && (
+            <button
+              type="button"
+              onClick={() => loadMore("deals")}
+              disabled={relatedLoading === "deals"}
+              className="w-full py-3 text-xs font-semibold text-indigo-700 border-t border-indigo-100 hover:bg-indigo-50 disabled:opacity-60"
+            >
+              {relatedLoading === "deals" ? "載入中..." : "載入更多商機"}
+            </button>
+          )}
         </div>
       )}
 
       {/* Tickets Tab */}
       {activeTab === "TICKETS" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          {contact.tickets?.length === 0 ? (
+          {tickets.length === 0 ? (
             <div className="py-12 text-center text-sm text-slate-400">尚無售後工單記錄</div>
           ) : (
             <table className="w-full text-left text-sm">
@@ -379,7 +448,7 @@ export default function ContactDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {contact.tickets.map((t: any) => {
+                {tickets.map((t: any) => {
                   const statusConfig = TICKET_STATUS_CONFIG[t.status] || { label: t.status, badge: "bg-slate-100" };
                   return (
                     <tr key={t.id}>
@@ -399,8 +468,19 @@ export default function ContactDetailPage() {
               </tbody>
             </table>
           )}
+          {nextCursors.tickets && (
+            <button
+              type="button"
+              onClick={() => loadMore("tickets")}
+              disabled={relatedLoading === "tickets"}
+              className="w-full py-3 text-xs font-semibold text-indigo-700 border-t border-indigo-100 hover:bg-indigo-50 disabled:opacity-60"
+            >
+              {relatedLoading === "tickets" ? "載入中..." : "載入更多工單"}
+            </button>
+          )}
         </div>
       )}
+      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
     </div>
   );
 }

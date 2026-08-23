@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Building2, Plus, Globe, Phone, MapPin, Users, DollarSign, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -20,8 +21,7 @@ export default function AccountsPage() {
 
   const fetchAccounts = () => {
     setLoading(true);
-    fetch("/api/accounts")
-      .then((res) => res.json())
+    fetchAllPages<any>("/api/accounts")
       .then((data) => {
         setAccounts(Array.isArray(data) ? data : []);
         setLoading(false);
@@ -92,7 +92,6 @@ export default function AccountsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {accounts.map((acc) => {
-            const totalDealValue = acc.deals?.reduce((sum: number, d: any) => sum + d.value, 0) || 0;
             return (
               <div
                 key={acc.id}
@@ -138,13 +137,13 @@ export default function AccountsPage() {
                   <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/60">
                     <span className="text-[10px] text-slate-400 block">聯絡人數</span>
                     <span className="font-bold text-slate-800 flex items-center gap-1 mt-0.5">
-                      <Users className="w-3.5 h-3.5 text-slate-500" /> {acc.contacts?.length || 0} 位
+                      <Users className="w-3.5 h-3.5 text-slate-500" /> {acc.contactCount || 0} 位
                     </span>
                   </div>
                   <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/60">
                     <span className="text-[10px] text-slate-400 block">商機規模</span>
                     <span className="font-bold text-indigo-600 flex items-center gap-1 mt-0.5">
-                      <DollarSign className="w-3.5 h-3.5 text-indigo-500" /> {formatCurrency(totalDealValue)}
+                      <DollarSign className="w-3.5 h-3.5 text-indigo-500" /> {formatCurrency(acc.totalDealValue || 0)}
                     </span>
                   </div>
                 </div>

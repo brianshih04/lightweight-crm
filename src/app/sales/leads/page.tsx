@@ -14,6 +14,7 @@ import {
   Building,
 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/api-client";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<any[]>([]);
@@ -38,8 +39,7 @@ export default function LeadsPage() {
 
   const fetchLeads = () => {
     setLoading(true);
-    fetch("/api/leads")
-      .then((res) => res.json())
+    fetchAllPages<any>("/api/leads")
       .then((data) => {
         setLeads(Array.isArray(data) ? data : []);
         setLoading(false);

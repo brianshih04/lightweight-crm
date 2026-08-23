@@ -18,6 +18,10 @@ import { formatDate } from "@/lib/utils";
 export default function CampaignsPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [referenceDataTruncated, setReferenceDataTruncated] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
 
   // Form State
@@ -28,18 +32,26 @@ export default function CampaignsPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchCampaigns = () => {
-    setLoading(true);
-    fetch("/api/marketing/campaigns")
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
+  const fetchCampaigns = async (cursor?: string) => {
+    if (cursor) setLoadingMore(true);
+    else setLoading(true);
+    setLoadError("");
+    try {
+      const response = await fetch(`/api/marketing/campaigns?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      if (!response.ok) throw new Error(`Campaigns request failed: ${response.status}`);
+      const json = await response.json();
+      setNextCursor(response.headers.get("X-Next-Cursor"));
+      setReferenceDataTruncated(response.headers.get("X-Reference-Data-Truncated") === "true");
+      setData((current: any) => cursor && current
+        ? { ...json, campaigns: [...current.campaigns, ...json.campaigns] }
+        : json);
+    } catch (error) {
+      console.error(error);
+      setLoadError("無法載入行銷活動，請稍後再試。");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   };
 
   useEffect(() => {
@@ -175,6 +187,25 @@ export default function CampaignsPage() {
           );
         })}
       </div>
+
+      {referenceDataTruncated && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          分群或郵件範本超過 100 筆；建立活動時僅提供前 100 筆選項，請先縮減或整理參考資料。
+        </p>
+      )}
+      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
+      {nextCursor && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => fetchCampaigns(nextCursor)}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
+          >
+            {loadingMore ? "載入中..." : "載入更多活動"}
+          </button>
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (

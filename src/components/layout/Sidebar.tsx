@@ -20,6 +20,7 @@ import {
   UserCog,
   Shield,
   Award,
+  ShieldAlert,
 } from "lucide-react";
 import { cn, REGIONS } from "@/lib/utils";
 
@@ -43,6 +44,7 @@ const navigation: NavSection[] = [
       { name: "總覽儀表板", href: "/dashboard", icon: LayoutDashboard },
       { name: "總經理決策報表", href: "/reports", icon: FileText, badge: "GM / 主管", minRole: ["GM", "ADMIN", "SALES_MANAGER"] },
       { name: "人員與區域管理", href: "/settings/users", icon: UserCog, badge: "Admin 專用", minRole: ["ADMIN", "GM"] },
+      { name: "安全稽核與告警", href: "/settings/audit", icon: ShieldAlert, badge: "Admin 專用", minRole: ["ADMIN"] },
     ],
   },
   {
@@ -123,7 +125,7 @@ export function Sidebar() {
           // Filter items based on user role
           const filteredItems = section.items.filter((item) => {
             if (!item.minRole) return true;
-            if (!currentUser) return true;
+            if (!currentUser) return false;
             return item.minRole.includes(currentUser.role);
           });
 
@@ -182,9 +184,13 @@ export function Sidebar() {
                   ? "系統管理員 (Admin)"
                   : isGM
                   ? "總經理 (全區業務)"
+                  : currentUser?.role === "MARKETING_MANAGER"
+                  ? "市場部主管 · 全區"
                   : currentUser?.role === "SALES_MANAGER"
-                  ? `主管 · ${userRegionLabel}`
-                  : `業務 · ${userRegionLabel}`}
+                  ? `區域主管 · ${userRegionLabel}`
+                  : currentUser?.role === "ORDER_ADMIN"
+                  ? `訂單管理員 · ${userRegionLabel}`
+                  : `Sales · ${userRegionLabel}`}
               </p>
             </div>
           </div>

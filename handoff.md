@@ -3,6 +3,8 @@
 > 💡 **致接手本專案的 AI Coding Agent**：  
 > 本文件旨在協助你快速掌握 **NexCRM** 的完整系統架構、程式碼組織、權限過濾規則、執行環境注意事項與未來的擴充方向。請在進行任何程式碼異動前仔細閱讀本文件。
 
+> **目前交接狀態（2026-08-23）**：首次 ADMIN bootstrap、密碼強制設定、opaque Session、RBAC/ABAC、Contact 360 分頁、主管循環防護與 PostgreSQL migration 已完成。最新業務角色為 `GM`（總經理）、`MARKETING_MANAGER`（市場部主管）、`SALES_MANAGER`（區域主管）、`SALES`，另有 `ORDER_ADMIN`（訂單管理員／Sales Assistant）支援角色；詳見第 3 節。SQLite `npm run check`、PostgreSQL migration/runtime、96 個角色安全檢查與 Playwright E2E 均已通過。接手者先讀本段與第 8 節，再執行 `npm run db:pg:check`、`npm run typecheck`。
+
 ---
 
 ## 📌 1. 專案核心背景與系統定位
@@ -10,11 +12,16 @@
 * **專案名稱**：NexCRM (輕量級企業客戶關係管理系統)
 * **架構定位**：單一企業自用，無多租戶負擔，兼具**多區域管理**、**多人獨立帳號密碼**、**階層式權限隔離**與**總經理營運決策分析**。
 * **技術棧**：
-  * **前端**：Next.js 14.2 (App Router) + React 18 + Tailwind CSS + Lucide Icons + Recharts
+  * **前端**：Next.js 16.3 (App Router) + React 19 + Tailwind CSS + Lucide Icons + Recharts
   * **拖曳元件**：@dnd-kit (Kanban 商機看板)
   * **後端**：Next.js Route Handlers (RESTful APIs)
-  * **資料庫 & ORM**：Prisma ORM 5.22 + SQLite (本地 `prisma/dev.db`) / 支援 PostgreSQL
-  * **認證機制**：Cookie-based Session (`crm_auth_session` cookie + `src/lib/auth.ts`)
+  * **資料庫 & ORM**：Prisma ORM 5.22 + SQLite（本地）/ PostgreSQL 16 generated schema、baseline migration 與 CI runtime test
+  * **認證機制**：資料庫可撤銷 opaque Session (`crm_auth_session` cookie + `AuthSession` table)
+  * **稽核機制**：`src/proxy.ts` 產生 request ID/安全標頭；`AuditEvent` 保存登入、拒絕與 mutation 結果
+  * **API contract**：`src/lib/contracts.ts` 定義 Zod runtime schemas；`api-response.ts` 統一 JSON/query parsing、錯誤格式與 cursor headers
+  * **Response DTO / 冪等**：`src/lib/response-contracts.ts` 是輸出 allowlist；`src/lib/idempotency.ts` 將建立型 mutation、AuditEvent 與 24 小時 replay snapshot 納入同一 transaction
+  * **SQLite 寫入保護**：`src/lib/write-serialization.ts` 僅在 `DATABASE_URL=file:` 時序列化工單建立；PostgreSQL 直接使用資料庫並行與 transaction
+  * **金額處理**：Deal.value 是 Prisma Decimal；報表一律使用 `src/lib/money.ts` 加總，不可先轉 JS number 再累加
   * **外部網路**：Cloudflare Tunnel (`cloudflared` 綁定 `crm.avision-gb10.org`)
 * **主要程式庫**：`https://github.com/brianshih04/lightweight-crm`
 
@@ -25,7 +32,7 @@
 | 項目 | 網址 / 位置 | 說明 |
 | :--- | :--- | :--- |
 | **正式外網 (Cloudflare SSL)** | `https://crm.avision-gb10.org` | 由背景 `cloudflared` tunnel 代理轉發至本地 3000 port |
-| **登入頁面 (Login)** | `https://crm.avision-gb10.org/login` | 支援手動帳密登入與一鍵身分切換面板 |
+| **登入頁面 (Login)** | `https://crm.avision-gb10.org/login` | 手動帳密登入；空資料庫時提供一次性首位 ADMIN 設定 |
 | **本地開發網址** | `http://localhost:3000` | Next.js 本地監聽端點 |
 | **人員與區域管理 (Admin)** | `https://crm.avision-gb10.org/settings/users` | 僅 Admin / GM 可存取 |
 | **總經理決策報表 (GM)** | `https://crm.avision-gb10.org/reports` | 僅 GM / Admin / 業務主管可存取 |
@@ -35,23 +42,21 @@
 
 ## 🔐 3. 帳號矩陣與角色職責 (Account Matrix)
 
-請特別注意 **「系統管理者 (Admin)」** 與 **「總經理 (GM)」** 為**兩個不同的獨立帳號**：
+系統不保存任何文件化預設帳密。當 `User` 表為空時，`/login` 會進入一次性 bootstrap：第一位完成姓名、Email、帳號及至少 12 字元密碼設定的人會成為 `ADMIN`/`ALL`；建立成功後 `/api/auth/setup` 拒絕第二次初始化。請在 Cloudflare Access 或受控內網後方完成此步驟。
 
-```
-+--------------------------------------------------------------------------------------------------------------------+
-| 角色類別         | 帳號 (Username) | 密碼 (Password) | 姓名           | 責任區域   | 核心職責與權限範圍                    |
-+--------------------------------------------------------------------------------------------------------------------+
-| 🛠️ 系統管理員   | admin           | Avi22099759     | 系統管理員     | 全區 (ALL) | 負責人員帳號建立、責任區域分配與系統維護 |
-| 👑 總經理 (GM)   | peter_gm        | peter123        | 柯博文 (Peter) | 全區 (ALL) | 業務全域穿透視角、決策報表與業績排行   |
-| 🏢 北部業務主管 | alice_mgr       | alice123        | 張雅婷 (Alice) | 北部 NORTH | 管轄北部全區商機，可看下屬 Kevin 業績  |
-| 💼 北部業務代表 | kevin_sales     | kevin123        | 林凱文 (Kevin) | 北部 NORTH | 僅限查看北部個人負責之商機與客戶      |
-| 💼 中部業務代表 | bob_sales       | bob123          | 李宗翰 (Bob)   | 中部CENTRAL| 僅限查看中部個人負責之商機與客戶      |
-| 💼 南部業務代表 | charlie_sales   | charlie123      | 趙冠宇(Charlie)| 南部 SOUTH | 僅限查看南部個人負責之商機與客戶      |
-| 💼 海外商務總監 | sophia_sales    | sophia123       | 孫佩華(Sophia) | 海外OVERSEAS 僅限查看海外個人負責之商機與客戶      |
-| 📣 行銷企劃主管 | carol_mkt       | carol123        | 陳品妤 (Carol) | 全區 (ALL) | 受眾動態分群、EDM 活動與工作流程引擎  |
-| 🎧 客服支援組長 | david_support   | david123        | 王建宏 (David) | 全區 (ALL) | 工單收件箱、SLA 時效監控與雙軌回覆    |
-+--------------------------------------------------------------------------------------------------------------------+
-```
+展示資料 seed 只有在明確提供 `DEMO_SEED_PASSWORD` 時才執行；不可將 demo seed 用於正式環境或管理員密碼恢復。
+
+`ADMIN` 是獨立的系統管理角色，不代表業務階層。業務主線為「GM → 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 是掛在區域主管下的訂單／業務助理角色。
+
+| Role | Scope | 主要職責與限制 |
+| --- | --- | --- |
+| `ADMIN` | `ALL` | 系統管理、使用者／區域／主管設定、安全稽核；首次 bootstrap 的唯一固定角色。 |
+| `GM` | `ALL` | 全公司業務資料、決策報表與組織管理；可任命各業務線主管。 |
+| `MARKETING_MANAGER` | `ALL` | 市場部專員與行銷 campaign/workflow；不可存取銷售報表、使用者管理或 audit API。 |
+| `SALES_MANAGER` | 指定區域 | 管理該區域的 Sales 與 `ORDER_ADMIN`，可查看區域商機與線索。 |
+| `ORDER_ADMIN` | 指定區域 | Sales Assistant；可在所屬區域讀取／建立／更新 Deal，不能管理使用者、報表或安全稽核。 |
+| `SALES` | 指定區域 | 僅能操作自己負責的商機／線索與所屬區域客戶資料。 |
+| `MARKETING` / `SUPPORT` | `ALL` | 分別執行核准的行銷流程與客服工單工作。 |
 
 ---
 
@@ -59,20 +64,26 @@
 
 ### 4.1 認證與分區資料過濾引擎 (`src/lib/auth.ts`)
 所有 API 進行資料查詢時，**必須**使用 `src/lib/auth.ts` 內的過濾器：
-* `getCurrentUser()`：從 Cookie `crm_auth_session` 解析目前登入者。
+* `getCurrentUser()`：雜湊 Cookie token、驗證資料庫 Session expiry/revocation，再重新載入目前使用者角色。
+* `createAuthSession()` / `revokeCurrentSession()` / `revokeAllUserSessions()`：建立及撤銷伺服器端 Session。
+* User DELETE 是 soft delete：設定 `isActive=false`/`deletedAt`、撤銷全部 Session、解除下屬 managerId；不可改回 hard delete 以免破壞業務與稽核歷史。
 * `getDealScopeFilter(user, queryRegion)`：
   * 若 `user` 為 `ADMIN` 或 `GM`：可查看所有區域資料（若選定區域則套用該區域）。
   * 若 `user` 為 `SALES_MANAGER`：自動鎖定 `region: user.region`，可見全區下屬商機。
+  * 若 `user` 為 `ORDER_ADMIN`：自動鎖定所屬區域，可見該區域商機。
   * 若 `user` 為 `SALES`：強制鎖定 `AND: [{ region: user.region }, { assignedToId: user.id }]`。
 * `getEntityScopeFilter(user, queryRegion)`：用於 Account 與 Contact 的分區過濾。
 * `getLeadScopeFilter(user, queryRegion)`：用於 Lead 的分區與負責人過濾。
-* `isAdmin(user)`、`isGM(user)`、`isGMOrAdmin(user)`、`isSalesManager(user)`。
+* `ORDER_ADMIN` 走所屬區域 scope；`MARKETING_MANAGER` 雖是 `ALL`，其銷售／報表權限仍由 permission matrix 拒絕，不可只依 region 判斷授權。
+* `isAdmin(user)`、`isGM(user)`、`isGMOrAdmin(user)`、`isSalesManager(user)`、`isMarketingManager(user)`、`isOrderAdmin(user)`。
+* `roleRequiresRegionalScope(role)` 與 `canManageUserRole(managerRole, subordinateRole)`：集中驗證區域角色與主管任命規則；`inspectManagerHierarchy()` 只沿祖先鏈檢查，最多 50 層。
 
 ### 4.2 後端 API 結構 (`src/app/api/`)
-* `/api/auth/login`：驗證帳密並寫入 `crm_auth_session` cookie。
-* `/api/auth/logout`：清除 cookie。
+* `/api/auth/login`：驗證帳密、套用帳號/IP 登入節流，建立伺服器端 Session 並寫入 opaque cookie。
+* `/api/auth/logout`：撤銷目前 Session；可選擇登出全部裝置。
 * `/api/auth/me`：前端組件獲取當前登入者資訊。
-* `/api/users` & `/api/users/[id]`：Admin 專用，建立/編輯成員帳號、分配區域、直屬主管與重設密碼。
+* `/api/audit`：僅 ADMIN 可查詢的 cursor-paginated 稽核事件 API。
+* `/api/users` & `/api/users/[id]`：Admin / GM 專用，建立/編輯成員帳號、分配區域、直屬主管與重設密碼；會拒絕不相容的角色主管、跨區主管、循環與過深階層。
 * `/api/reports/executive`：總經理營運報表數據聚合（限制僅 GM、Admin、Manager 存取）。
 * `/api/deals`：商機 Kanban 看板資料（自動套用 RBAC 過濾）。
 * `/api/leads`：潛在線索與一鍵轉換 API。
@@ -80,9 +91,9 @@
 * `/api/tickets` & `/api/tickets/[id]`：售後工單與雙軌對話（Public Reply vs Internal Note）。
 
 ### 4.3 前端頁面結構 (`src/app/`)
-* `/login`：登入頁面（含快速測試身分卡片）。
+* `/login`：登入頁面與一次性首次 ADMIN 設定。
 * `/dashboard` 或 `/`：總覽儀表板。
-* `/settings/users`：人員帳號與負責區域管理（Admin 專屬）。
+* `/settings/users`：人員帳號與負責區域管理（Admin / GM）。
 * `/reports`：總經理決策分析報表（支援一鍵列印）。
 * `/sales/pipeline`：視覺化商機看板（支援 @dnd-kit 拖曳）。
 * `/sales/leads`：線索意向評分與轉換。
@@ -115,11 +126,22 @@
 
 ### ⚠️ Gotcha 3: PowerShell 下 curl JSON 轉義問題
 * 在 Windows PowerShell 下使用原生 `curl` 發送 JSON POST 時，雙引號容易被剝除導致 `SyntaxError`。
-* **推薦使用 PowerShell 原生指令測試 API**：
+* **推薦使用 PowerShell 原生指令測試 API**，帳密由操作者安全輸入，不要寫入文件或 shell history：
   ```powershell
   $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession;
-  $res = Invoke-RestMethod -Uri "http://localhost:3000/api/auth/login" -Method Post -Body (@{username="admin"; password="Avi22099759"} | ConvertTo-Json) -ContentType "application/json" -WebSession $session;
+  $credential = Get-Credential;
+  $res = Invoke-RestMethod -Uri "http://localhost:3000/api/auth/login" -Method Post -Headers @{Origin="http://localhost:3000"} -Body (@{username=$credential.UserName; password=$credential.GetNetworkCredential().Password} | ConvertTo-Json) -ContentType "application/json" -WebSession $session;
   ```
+
+### ⚠️ Gotcha 4: SQLite 不適合作為正式高併發資料庫
+* `TicketSequence` 在 transaction 內原子遞增，可保證工單號唯一；但 SQLite 同一時間只能有單一 writer。
+* 本機 `file:` 資料庫因此以 process-global FIFO 序列化工單建立，並已通過 100 筆同時請求測試。這只保護單一 Node.js process，不是多副本部署方案。
+* staging/production 使用 `prisma/postgresql/schema.prisma` 與 migrations；CI 已在 PostgreSQL 16 驗證 100 路併發。不要直接修改 generated schema。
+
+### ⚠️ Gotcha 5: 建立型 mutation 的安全重試
+* 呼叫端若可能因 timeout、斷線或使用者重按而重送，應在第一次請求產生 `Idempotency-Key` 並於重試時沿用；不要每次重送產生新 key。
+* key scope 是 actor + method + path，保留 24 小時；相同 payload 回放原始 status/body 並附 `Idempotency-Replayed: true`，不同 payload 回 `409`。
+* idempotency record 只保存 SHA-256 key hash，過期紀錄會在後續帶 key 的 mutation 中清理。
 
 ---
 
@@ -132,7 +154,8 @@ Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
 # 2. 同步資料庫結構與重新產生 Prisma Client
 npx prisma db push
 
-# 3. 重新匯入測試種子資料 (包含 Admin Avi22099759 與各區業務)
+# 3. 僅在隔離的 demo DB 匯入展示資料；必須自行設定至少 12 字元密碼
+$env:DEMO_SEED_PASSWORD = Read-Host "Demo password" -MaskInput
 npm run db:seed
 
 # 4. 建立 Next.js 生產建置
@@ -153,7 +176,31 @@ cloudflared tunnel --config C:\Users\Brian\.cloudflared\config-crm.yml run crm-g
 1. **企業真實 SMTP 郵件發送**：在 `/src/lib/mail.ts` 中整合 `nodemailer` 或 SendGrid API，讓 EDM 行銷活動與工作流能實際對外寄信。
 2. **社群渠道 Webhook (LINE OA / WhatsApp)**：建立 `/api/webhooks/line` 將訪客諮詢直接轉為 CRM Lead 或 Ticket。
 3. **PWA 外勤支援**：配置 `next-pwa`，支援外勤業務離線查閱客戶與 GPS 拜訪打卡。
-4. **PostgreSQL 生產資料庫切換**：修改 `prisma/schema.prisma` 中的 `datasource db` 為 `postgresql` 並於 `.env` 配置 `DATABASE_URL`。
+4. **PostgreSQL 正式切換**：依 `docs/postgresql-cutover.md` 執行備份、`migrate deploy`、SQLite importer、readiness 與 rollback gate；禁止直接修改 SQLite 主 schema provider。
+
+### 7.1 尚未完成、不可假設已上線
+
+Git history 機密清理與正式憑證輪替、MFA/SSO、外部 alert channel、正式 PostgreSQL cutover、registry／流量層自動 rollback、加密離機備份、更多核心流程的瀏覽器 E2E，以及集中式 logs/metrics/traces 仍待正式環境治理。不要因本機測試通過就宣稱 production-ready。
+
+---
+
+## ✅ 8. 接手驗證清單（先做這些）
+
+```powershell
+# SQLite 本機品質門檻
+npm run check
+
+# PostgreSQL schema drift / migration / runtime（需要 Docker 與 5432 測試 DB）
+npm run db:pg:check
+npm run db:pg:generate
+npm run db:pg:migrate
+npm run test:postgres
+
+# 瀏覽器首次 ADMIN 流程
+npm run test:e2e
+```
+
+接手修改角色或授權時，至少同步檢查 `src/lib/auth.ts`、`src/lib/permissions.ts`、`src/lib/contracts.ts`、`src/app/api/users/**`、`src/app/settings/users/page.tsx`、`prisma/schema.prisma`、`scripts/generate-postgres-schema.mjs`、`prisma/postgresql/migrations/`、`tests/permissions.test.ts`、`tests/security.integration.mjs` 與本文件群組。
 
 ---
 *NexCRM Agent 交接小組 · 2026*

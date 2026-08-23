@@ -44,7 +44,7 @@
 
 系統不保存任何文件化預設帳密。當 `User` 表為空時，`/login` 會進入一次性 bootstrap：第一位完成姓名、Email、帳號及至少 12 字元密碼設定的人會成為 `ADMIN`/`ALL`；建立成功後 `/api/auth/setup` 拒絕第二次初始化。請在 Cloudflare Access 或受控內網後方完成此步驟。
 
-展示資料 seed 只有在明確提供 `DEMO_SEED_PASSWORD` 時才執行；不可將 demo seed 用於正式環境或管理員密碼恢復。
+展示資料 seed 需同時提供 `DEMO_SEED_PASSWORD` 與 `DEMO_SEED_CONFIRM=1` 才會執行（seed 會清除該資料庫所有既有資料，只建立人員結構與標準管線）；不可將 demo seed 用於正式環境或管理員密碼恢復。
 
 `ADMIN` 是獨立的系統管理角色，不代表業務階層。業務主線為「GM → 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 是跨市場的訂單管理支援角色（組織上掛在市場部主管下）。
 
@@ -174,8 +174,9 @@ Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
 # 2. 同步資料庫結構與重新產生 Prisma Client
 npx prisma db push
 
-# 3. 僅在隔離的 demo DB 匯入展示資料；必須自行設定至少 12 字元密碼
+# 3. 僅在可重設的 demo DB 重建人員結構；seed 會清除所有既有資料，需明確確認
 $env:DEMO_SEED_PASSWORD = Read-Host "Demo password" -MaskInput
+$env:DEMO_SEED_CONFIRM = "1"
 npm run db:seed
 
 # 4. 建立 Next.js 生產建置

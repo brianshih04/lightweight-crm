@@ -26,6 +26,7 @@
     "db:passwords:upgrade": "tsx scripts/upgrade-sqlite-passwords.ts prisma/dev.db",
     "db:pg:import-sqlite": "node scripts/migrate-sqlite-to-postgres.mjs prisma/dev.db",
     "db:seed": "prisma db seed",
+    "db:clear-business-data": "tsx scripts/clear-business-data.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

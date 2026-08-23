@@ -23,7 +23,17 @@ yarn-debug.log*
 yarn-error.log*
 
 # Local env files
+.env
+.env.*
+!.env.example
 .env*.local
+
+# Local runtime secrets
+/.runtime/
+/cookies.txt
+
+# Local container secret mounts
+/deploy/secrets/
 
 # SQLite database
 *.db

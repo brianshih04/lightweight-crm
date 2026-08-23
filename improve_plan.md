@@ -46,6 +46,12 @@
 - [x] Contact 360 拆為最小 overview 與 deals/tickets/activities 三條獨立 cursor API；各分頁預設 25、最大 100 筆，前端提供個別載入更多、錯誤狀態，並維持 contact/deal 區域 scope。
 - [x] 使用者主管循環驗證改為只沿祖先鏈逐層讀取，設 50 層上限並回傳 `MANAGER_HIERARCHY_TOO_DEEP`；cycle、pre-existing cycle、depth limit 皆有單元與安全整合測試。
 - [x] 業務階層明確拆分為總經理（GM）、市場部主管（MARKETING_MANAGER）、區域主管（SALES_MANAGER）與 Sales；新增區域範圍的訂單管理員（ORDER_ADMIN，Sales Assistant），並同步權限、主管任命規則、seed、管理 UI、文件與 PostgreSQL enum migration。
+- [x] 清除所有示範業務資料（客戶／商機／工單等），seed 改為只建立人員結構與標準管線；新增 `db:clear-business-data` 保留人員與設定的清理腳本。
+- [x] 匯入實際組織編制：GM Thomas（雙帳號含市場部主管）、三個行銷部（Ivan/Jane/James ＋ Sales）、訂單管理員 Linda/Brenda 掛市場部主管下、客服主管 Kidd（雙帳號含企劃部主管）。
+- [x] 區域槽位重新定義為三個市場＋總部（NORTH=中南美/菲律賓、CENTRAL=美歐/俄印/台灣、SOUTH=俄羅斯/中東、OVERSEAS=總部與其他）：僅改顯示名稱與人員指派，內部 enum 與 schema 不變，報表／人員頁／篩選器同步。
+- [x] `ORDER_ADMIN` 權限模型調整為跨全市場商機支援（Deal/Contact/Lead scope 全域，可比照 GM 用 queryRegion 過濾），商機建立可比照 GM 指定區域；使用者管理與報表權限不變，96 項安全檢查通過。
+- [x] UI 現代化：共用 UI 元件庫（Button/Modal focus-trap/ConfirmDialog/Toast/EmptyState/ErrorBanner/SearchInput debounce/Field）、(app) route group server-side auth gate、登入頁脫離 app 殼層、route-level loading/error/not-found 邊界、401 自動導回登入、API 錯誤信封解析（含 422 欄位訊息）、全部頁面的 mutation 成功／失敗回饋。
+- [x] 商機看板改為真實 @dnd-kit 拖曳（樂觀更新＋失敗回滾＋DragOverlay＋下拉備援），移除換階段整頁重載；儀表板與報表改用 recharts 圖表（階段分佈、工單優先度、分市場長條圖、排行榜進度條），報表摘要文案改為數據驅動。
 
 **尚未解除的主要阻斷項**：Git history 機密清理與正式憑證輪替、MFA/SSO、外部 alert channel、正式 PostgreSQL cutover、registry/流量層自動 rollback、排程加密離機備份、擴充各核心流程的瀏覽器 E2E，以及集中式 logs/metrics/traces。
 

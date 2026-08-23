@@ -3,7 +3,7 @@
 > 💡 **致接手本專案的 AI Coding Agent**：  
 > 本文件旨在協助你快速掌握 **NexCRM** 的完整系統架構、程式碼組織、權限過濾規則、執行環境注意事項與未來的擴充方向。請在進行任何程式碼異動前仔細閱讀本文件。
 
-> **目前交接狀態（2026-08-23）**：首次 ADMIN bootstrap、密碼強制設定、opaque Session、RBAC/ABAC、Contact 360 分頁、主管循環防護與 PostgreSQL migration 已完成。最新業務角色為 `GM`（總經理）、`MARKETING_MANAGER`（市場部主管）、`SALES_MANAGER`（區域主管）、`SALES`，另有 `ORDER_ADMIN`（訂單管理員／Sales Assistant）支援角色；詳見第 3 節。SQLite `npm run check`、PostgreSQL migration/runtime、96 個角色安全檢查與 Playwright E2E 均已通過。接手者先讀本段與第 8 節，再執行 `npm run db:pg:check`、`npm run typecheck`。
+> **目前交接狀態（2026-08-23）**：首次 ADMIN bootstrap、密碼強制設定、opaque Session、RBAC/ABAC、Contact 360 分頁、主管循環防護與 PostgreSQL migration 已完成。**已匯入實際組織編制**（GM Thomas、三個行銷部對應三個市場區域、訂單管理員跨全市場支援、客服與企劃主管），區域槽位重新定義為 NORTH=第一市場(中南美/菲律賓)、CENTRAL=第二市場(美歐/俄印/台灣)、SOUTH=第三市場(俄羅斯/中東)、OVERSEAS=總部與其他（內部 enum 值不變，僅顯示名稱與人員指派調整）。前端已完成 UI 現代化：共用 UI 元件庫、(app) route group server auth gate、拖曳 Kanban、recharts 圖表、統一載入/空/錯誤狀態與操作回饋。SQLite `npm run check`、PostgreSQL migration/runtime、96 個角色安全檢查與 Playwright E2E 均已通過。接手者先讀本段與第 8 節，再執行 `npm run db:pg:check`、`npm run typecheck`。
 
 ---
 
@@ -48,6 +48,8 @@
 
 `ADMIN` 是獨立的系統管理角色，不代表業務階層。業務主線為「GM → 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 是跨市場的訂單管理支援角色（組織上掛在市場部主管下）。
 
+**實際編制（2026-08-23 起，定義於 `prisma/seed.ts`）**：GM=`thomas`（另有 `thomas_mkt` 市場部主管帳號）；第一行銷部=`ivan`+`maite`（NORTH 第一市場：中南美/菲律賓）；第二行銷部=`jane`+`lauren`（CENTRAL 第二市場：美歐/俄印/台灣）；第三行銷部=`james`+`vivien`（SOUTH 第三市場：俄羅斯/中東）；訂單管理員=`linda`+`brenda`（掛 `thomas_mkt` 下，全市場商機權限）；客服主管=`kidd`（另有 `kidd_planning` 企劃部主管帳號）。兼任兩個職務者比照「一職務一帳號」模式。
+
 | Role | Scope | 主要職責與限制 |
 | --- | --- | --- |
 | `ADMIN` | `ALL` | 系統管理、使用者／區域／主管設定、安全稽核；首次 bootstrap 的唯一固定角色。 |
@@ -90,16 +92,29 @@
 * `/api/contacts` & `/api/accounts`：客戶 360 資料。
 * `/api/tickets` & `/api/tickets/[id]`：售後工單與雙軌對話（Public Reply vs Internal Note）。
 
-### 4.3 前端頁面結構 (`src/app/`)
-* `/login`：登入頁面與一次性首次 ADMIN 設定。
-* `/dashboard` 或 `/`：總覽儀表板。
-* `/settings/users`：人員帳號與負責區域管理（Admin / GM）。
-* `/reports`：總經理決策分析報表（支援一鍵列印）。
-* `/sales/pipeline`：視覺化商機看板（支援 @dnd-kit 拖曳）。
+### 4.3 前端架構 (`src/app/` 與 `src/components/`)
+
+**Route groups 與殼層**：
+* `src/app/layout.tsx`：根 layout——只含 html/body 與 `ToastProvider`（全域操作通知）。
+* `src/app/(app)/layout.tsx`：server component，呼叫 `getCurrentUser()` 做 **server-side auth gate**（未登入 redirect `/login`），並把 `SessionUser` 以 props 傳給 Sidebar/Header（不再各自 fetch `/api/auth/me`）。
+* `src/app/login/page.tsx`：獨立於 app 殼層的登入／首次 ADMIN 設定頁。
+* `(app)/loading.tsx`、`(app)/error.tsx`（含重試）、`src/app/not-found.tsx`：路由邊界。
+
+**頁面（全部在 `(app)/` 內，URL 不變）**：
+* `/`：總覽儀表板（recharts 階段分佈圖＋工單優先度甜甜圈）。
+* `/settings/users`：人員帳號與負責區域管理（Admin / GM）；`/settings/audit`：ADMIN 安全稽核主控台。
+* `/reports`：總經理決策分析報表（分市場長條圖、排行榜進度條、一鍵列印）。
+* `/sales/pipeline`：@dnd-kit 拖曳看板（`src/components/sales/PipelineBoard.tsx`）——樂觀更新＋失敗回滾＋下拉選單備援。
 * `/sales/leads`：線索意向評分與轉換。
-* `/contacts` & `/accounts`：客戶 360 與統一活動時間軸。
-* `/marketing/campaigns` & `/marketing/workflows`：行銷活動與自動化流程。
+* `/contacts` & `/accounts`：客戶 360 與統一活動時間軸（tabs 具 `role="tab"` 語意）。
+* `/marketing/campaigns` & `/marketing/workflows`：行銷活動與自動化流程（toggle 具 `role="switch"`）。
 * `/support/tickets`：工單收件箱與 SLA 監控。
+
+**共用前端基礎**：
+* `src/components/ui/`：共用 UI 元件庫——Button（loading 狀態）、Modal（focus trap／Escape／點外關閉／多層堆疊）、ConfirmDialog、ToastProvider/useToast（成功／錯誤通知）、EmptyState、ErrorBanner（含重試）、PageHeader、LoadMoreButton、SearchInput（300ms debounce）、Field/inputClassName。新頁面一律使用這套元件，不要手刻 modal／按鈕／狀態。
+* `src/lib/api-client.ts`：`apiFetch`／`fetchApiResponse`／`fetchAllPages`——解析統一錯誤信封為 `ApiError`（含 422 issues 欄位訊息）、401 UNAUTHENTICATED 自動 redirect `/login`（登入頁除外）、支援 AbortSignal；`apiErrorMessage()` 供 toast／inline 顯示。
+* `src/components/charts/`：recharts 圖表（StageFunnelChart、TicketPriorityDonut、RegionalPerformanceChart）。
+* 所有 mutation 失敗必須顯示回饋：modal 內用 inline banner，背景操作用 toast；成功用 toast.success。
 
 ---
 

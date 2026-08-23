@@ -16,7 +16,7 @@ NexCRM 是一套為企業自用設計的現代化、輕量級全功能 Web-based
 4. **嚴格分區權限與資料隔離 (Data Scoping)**：
    * **Sales (業務員)**：僅能檢視與操作自己負責區域的資料。
    * **Regional Manager (區域主管)**：能檢視該區域下 Sales 與訂單管理員的商機與進展。
-   * **Order Admin (訂單管理員)**：作為 Sales Assistant，在指定區域處理商機／訂單資料。
+   * **Order Admin (訂單管理員)**：跨市場支援單位，可處理所有市場的商機／訂單資料（組織上掛在市場部主管下）。
    * **Marketing Manager (市場部主管)**：管理市場部專員與全區行銷工作流。
    * **Admin (系統管理者)**：獨立負責人員組織架構配置、責任區域分配與系統維護。
    * **GM (總經理)**：獨立高階決策帳號，具備全公司穿透視角與決策報表。
@@ -117,7 +117,7 @@ erDiagram
 
 系統後端採用統一的安全中介模組 (`src/lib/auth.ts`)，在所有 API 請求執行前進行使用者鑑權與資料範圍過濾：
 
-業務階層定義為「GM（總經理）→ 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 為區域主管管理的 Sales Assistant 支援角色，`ADMIN` 則是獨立的系統管理角色。
+業務階層定義為「GM（總經理）→ 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 為跨市場訂單管理支援角色（組織掛市場部主管下），`ADMIN` 則是獨立的系統管理角色。實際編制見 `prisma/seed.ts`：三個行銷部對應三個市場區域（台灣併入第二市場），兼任職務者採一職務一帳號。
 
 ```
 +---------------------------------------------------------------------------------------------------------+
@@ -127,7 +127,7 @@ erDiagram
 | GM (總經理)          | ALL               | 全公司穿透視角；可存取 /reports 決策報表與業績排行榜                |
 | MARKETING_MANAGER (市場部主管)| ALL           | 管理市場部專員、行銷推播、受眾分群與工作流                          |
 | SALES_MANAGER (區域主管)| NORTH / CENTRAL...| 僅限所屬區域；可查看 Sales 與訂單管理員的商機與進展              |
-| ORDER_ADMIN (訂單管理員)| NORTH / CENTRAL...| Sales Assistant；可在所屬區域讀取／建立／更新商機資料             |
+| ORDER_ADMIN (訂單管理員)| 跨全市場         | 訂單管理支援；可讀取／建立／更新所有市場的商機資料                 |
 | SALES (Sales)          | NORTH / CENTRAL...| 僅限所屬區域且指派給個人的商機與客戶 (assignedToId = user.id)       |
 | MARKETING (市場部專員) | ALL               | 行銷推播、受眾分群與工作流管理                                      |
 | SUPPORT (客服專員)    | ALL               | 售後工單收件箱、SLA 監控與工單回覆                                  |
@@ -144,9 +144,10 @@ erDiagram
 | **Phase 2** | **客戶 360 與統一時間軸** | 企業客戶 (Accounts)、聯絡人 (Contacts)、跨模組 Activity 統一時間軸 | ✅ 完成 |
 | **Phase 3** | **行銷自動化與客服工單** | 受眾分群、EDM 活動推播、工作流程引擎、工單收件箱、SLA 預警、雙軌回覆 | ✅ 完成 |
 | **Phase 4** | **遠端部署與版本控管** | GitHub 倉庫建立、Cloudflare Tunnel 配置、綁定 `crm.avision-gb10.org` | ✅ 完成 |
-| **Phase 5** | **多區域與總經理決策報表** | 北中南海外分區支援、`/reports` 總經理決策分析報表、分區營運矩陣 | ✅ 完成 |
+| **Phase 5** | **多市場與總經理決策報表** | 三市場＋總部分區支援、`/reports` 總經理決策分析報表、分市場營運矩陣 | ✅ 完成 |
 | **Phase 6** | **認證權限與人員分區管理** | 一次性首位 ADMIN、scrypt 密碼、可撤銷 opaque Session、登入節流、CSRF Origin 防護與權限矩陣 | ✅ 完成 |
 | **Phase 7** | **嚴格架構改善與可交接品質門檻** | PostgreSQL migration/runtime、API contract/DTO、cursor pagination、Contact 360、Audit、Playwright E2E、GM／市場部主管／區域主管／Sales 階層與 Order Admin | ✅ 本機／CI gate 完成；正式營運治理待辦 |
+| **Phase 8** | **實際組織導入與 UI 現代化** | 實際編制 seed（三行銷部對應三市場）、訂單管理員跨市場支援、市場區域重新命名、共用 UI 元件庫、(app) route group server auth gate、拖曳 Kanban、recharts 圖表、統一狀態與操作回饋 | ✅ 本機 gate 完成 |
 
 ---
 

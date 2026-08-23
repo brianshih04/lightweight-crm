@@ -39,13 +39,13 @@
 * **即時編輯與重設密碼**：支援彈性調動業務區域與重設登入憑證。
 
 ### 2. 📊 總經理全公司營運決策報表 (`/reports`)
-* **季度目標達成度追蹤**：對比季度營收目標金額 ($10,000,000) vs 已贏單金額 vs 儲備管線總值。
-* **分區營運績效矩陣**：視覺化呈現三個市場（中南美/菲、美歐/俄印/台灣、俄羅斯/中東）與總部之商機總額、客戶數與工單健全度。
-* **業務團隊業績排行榜**：即時統計與排行全體業務個人的贏單貢獻。
+* **季度目標達成度追蹤**：對比季度營收目標金額 vs 已贏單金額 vs 儲備管線總值。
+* **分市場營運績效**：recharts 分組長條圖＋績效矩陣，對比三個市場（中南美/菲律賓、美歐/俄印/台灣、俄羅斯/中東）與總部之商機總額、客戶數與工單健全度。
+* **業務團隊業績排行榜**：即時統計與排行全體業務個人的贏單貢獻，附相對第一名進度條。
 * **列印與匯出支援**：支援一鍵生成乾淨的列印/PDF 報表視圖。
 
 ### 3. 💼 銷售管理 (Sales Force Automation - SFA)
-* **視覺化商機看板 (Kanban Pipeline)**：拖曳切換商機階段，自動重算成交機率與管線金額。
+* **視覺化商機看板 (Kanban Pipeline)**：真實拖曳（@dnd-kit）切換商機階段——樂觀更新、失敗自動回滾，每卡保留「移動階段」下拉選單作為鍵盤備援；自動重算成交機率與各階段總額。
 * **潛在線索 (Leads)**：評估意向分數 (Lead Scoring)，支援一鍵轉換為正式客戶與商機。
 
 ### 4. 👥 客戶 360 度統一視圖 (Customer Hub)
@@ -67,9 +67,12 @@
 ## 🛠️ 技術架構
 
 * **前端框架**：Next.js 16 (App Router) + React 19
+* **App 殼層**：`(app)` route group 由 server component 驗證 Session 並注入使用者（未登入自動 redirect `/login`）；登入頁獨立於應用殼層，並有 route-level `loading.tsx`／`error.tsx`／`not-found.tsx` 邊界
+* **共用 UI 元件庫**：`src/components/ui/`（Button/Modal/ConfirmDialog/Toast/EmptyState/ErrorBanner/PageHeader/SearchInput/Field 等），全站一致的載入／空狀態／錯誤重試與操作回饋
 * **樣式設計**：Tailwind CSS + Lucide React
-* **圖表視覺化**：Recharts
-* **拖曳互動**：@dnd-kit (Kanban Board)
+* **圖表視覺化**：Recharts（儀表板階段分佈與工單優先度、報表分市場長條圖）
+* **拖曳互動**：@dnd-kit（Kanban Board，PointerSensor + DragOverlay + 樂觀更新）
+* **API client**：`src/lib/api-client.ts` 解析統一錯誤信封（含 422 欄位層級訊息）、Session 過期自動導回登入頁、支援 AbortController 的分頁載入
 * **ORM & 資料庫**：Prisma ORM + SQLite（本地快速開發）/ PostgreSQL 16（generated schema、native enums、baseline migration 與真實整合測試）
 * **身分驗證**：資料庫可撤銷 opaque Session；Cookie 僅保存 256-bit 隨機 token，資料庫只保存 SHA-256 token hash
 * **登入防護**：持久化帳號/IP 節流、同源 Origin 驗證、Secure/HttpOnly/SameSite Cookie
@@ -82,6 +85,7 @@
 * **組織階層安全**：主管變更只沿祖先鏈逐層檢查，最多 50 層並阻擋自我／循環／過深階層
 * **金額精度**：Deal 金額以 Prisma Decimal 儲存與彙總，JSON DTO 邊界轉為安全範圍 number 以維持前端相容
 * **Readiness**：`GET /api/health` 執行最小 DB 查詢；就緒回 `200`，資料庫不可用回 `503 SERVICE_NOT_READY`
+* **市場區域模型**：NORTH=第一市場（中南美/菲律賓）、CENTRAL=第二市場（美歐/俄印/台灣）、SOUTH=第三市場（俄羅斯/中東）、OVERSEAS=總部與其他；`ORDER_ADMIN` 為跨全市場支援角色
 
 建立型 mutation 可帶 `Idempotency-Key`（1–128 個可見 ASCII 字元）。同一使用者、HTTP method、path、key 與相同 payload 在 24 小時內會回放原始 status/body，並附上 `Idempotency-Replayed: true`；同 key 搭配不同 payload 回 `409 IDEMPOTENCY_CONFLICT`。資料庫只保存 key 的 SHA-256，不保存原始值。
 
@@ -141,32 +145,39 @@ npm run db:clear-business-data -- --confirm
 CRM/
 ├── prisma/
 │   ├── schema.prisma          # 資料庫模型結構 (User, Deal, Contact, Ticket 等)
-│   └── seed.ts                # 組織階層、帳號密碼與分區測試種子資料
+│   └── seed.ts                # 組織階層（實際編制）與標準銷售管線 seed
 ├── src/
 │   ├── app/
-│   │   ├── accounts/          # 企業客戶列表
-│   │   ├── contacts/          # 聯絡人管理與 360 時間軸
-│   │   ├── dashboard/         # 總覽儀表板
-│   │   ├── login/             # 登入與一次性首次 ADMIN 設定頁面
-│   │   ├── marketing/         # 行銷活動與自動化工作流程
-│   │   ├── reports/           # 總經理營運決策分析報表
-│   │   ├── sales/             # 商機看板 (Kanban) 與線索管理 (Leads)
-│   │   ├── settings/users/    # Admin 人員帳號與負責區域管理
-│   │   ├── support/           # 客服工單收件箱與詳情
+│   │   ├── (app)/             # 業務頁面 route group（server 端 Session 閘門）
+│   │   │   ├── page.tsx       # 總覽儀表板
+│   │   │   ├── accounts/      # 企業客戶列表
+│   │   │   ├── contacts/      # 聯絡人管理與 360 時間軸
+│   │   │   ├── marketing/     # 行銷活動與自動化工作流程
+│   │   │   ├── reports/       # 總經理營運決策分析報表
+│   │   │   ├── sales/         # 商機看板 (Kanban) 與線索管理 (Leads)
+│   │   │   ├── settings/      # 人員帳號管理與安全稽核主控台
+│   │   │   ├── support/       # 客服工單收件箱與詳情
+│   │   │   ├── layout.tsx     # App 殼層（Sidebar + Header + Session gate）
+│   │   │   ├── loading.tsx    # 路由載入邊界
+│   │   │   └── error.tsx      # 路由錯誤邊界（含重試）
+│   │   ├── login/             # 登入與一次性首次 ADMIN 設定頁面（獨立殼層）
 │   │   └── api/               # RESTful API 路由 (含 RBAC 分區資料過濾)
 │   ├── components/
-│   │   ├── layout/            # Sidebar 側邊欄與 Header 頂部導航
-│   │   └── sales/             # Kanban 看板與卡片元件
+│   │   ├── ui/                # 共用 UI 元件庫（Button/Modal/Toast/狀態元件等）
+│   │   ├── charts/            # Recharts 圖表元件（階段分佈/優先度/分市場）
+│   │   ├── sales/             # Kanban 拖曳看板 (PipelineBoard)
+│   │   └── layout/            # Sidebar 側邊欄與 Header 頂部導航
 │   └── lib/
 │       ├── auth.ts            # opaque Session 與分區資料過濾引擎
 │       ├── authorization.ts   # default-deny 權限矩陣入口
+│       ├── api-client.ts      # 錯誤信封解析、401 自動導向、分頁載入
 │       ├── csrf.ts            # mutation 同源驗證
 │       ├── login-throttle.ts  # DB-backed 登入節流
 │       ├── audit.ts           # 安全事件、request ID 與 keyed IP pseudonym
 │       ├── contracts.ts       # 共用 Zod request/query contracts
 │       ├── api-response.ts    # JSON parser、error envelope 與 cursor response
 │       ├── prisma.ts          # Prisma Client 單例實例
-│       └── utils.ts           # 區域定義、顏色與通用工具函式
+│       └── utils.ts           # 市場區域定義、顏色與通用工具函式
 ├── development_plan.md        # 系統開發規劃與架構設計書
 ├── userguide.md               # 完整使用者操作手冊
 └── README.md                  # 專案總覽說明文件

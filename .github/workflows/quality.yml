@@ -96,6 +96,14 @@ jobs:
           npm run build
           npm run test:postgres
 
+      - name: Seed smoke (guarded, transactional)
+        env:
+          DEMO_SEED_PASSWORD: Ci-Seed-Smoke-Password!2026
+          DEMO_SEED_CONFIRM: "1"
+        run: |
+          npm run db:seed
+          node -e "const {PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.user.count().then(c=>{console.log('seeded users:',c);if(c<13){console.error('seed transaction did not seed expected personnel');process.exit(1)}}).finally(()=>p.\$disconnect())"
+
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 25

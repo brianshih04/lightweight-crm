@@ -1,10 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isOrderAdmin, nestedUserSelect } from "@/lib/auth";
+import {
+  asDataRegion,
+  getDealScopeFilter,
+  getEntityScopeFilter,
+  isGMOrAdmin,
+  isOrderAdmin,
+  nestedUserSelect,
+} from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/authorization";
 import { apiErrorFromUnknown, apiSuccess, parseQuery } from "@/lib/api-response";
 import { regionFilterQuerySchema } from "@/lib/contracts";
 import { dashboardResponseSchema } from "@/lib/response-contracts";
 import { moneyToNumber } from "@/lib/money";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -24,22 +32,29 @@ export async function GET(request: Request) {
     const entityWhere = getEntityScopeFilter(user, queryRegion);
     // 活動範圍與商機範圍一致：GM/Admin/OrderAdmin 為全域，其餘依區域
     const activityGlobal = isGMOrAdmin(user) || isOrderAdmin(user) || user.region === "ALL";
-    const regionActivityConditions = [
-      { contact: { region: user.region } },
-      { account: { region: user.region } },
-      { ticket: { region: user.region } },
-      ...(user.role === "SALES"
-        ? [{ deal: { region: user.region, assignedToId: user.id } }, { userId: user.id }]
-        : [{ deal: { region: user.region } }]),
-    ];
-    const activityWhere = activityGlobal
+    // UserRegion 含 ALL，但 PostgreSQL 的 region 欄位是 DataRegion enum（不含 ALL）；
+    // 先以 asDataRegion 縮窄，無合法區域時直接 deny
+    const dataRegion = asDataRegion(user.region);
+    const regionActivityConditions: Prisma.ActivityWhereInput[] = dataRegion
+      ? [
+          { contact: { region: dataRegion } },
+          { account: { region: dataRegion } },
+          { ticket: { region: dataRegion } },
+          ...(user.role === "SALES"
+            ? [{ deal: { region: dataRegion, assignedToId: user.id } }, { userId: user.id }]
+            : [{ deal: { region: dataRegion } }]),
+        ]
+      : [];
+    const activityWhere: Prisma.ActivityWhereInput = activityGlobal
       ? (canReadDeals ? {} : { dealId: null })
-      : {
-          AND: [
-            ...(canReadDeals ? [] : [{ dealId: null }]),
-            { OR: regionActivityConditions },
-          ],
-        };
+      : dataRegion
+        ? {
+            AND: [
+              ...(canReadDeals ? [] : [{ dealId: null }]),
+              { OR: regionActivityConditions },
+            ],
+          }
+        : { id: "__unauthorized__" };
 
     // 1. Core KPIs filtered by user's permission scope
     const [totalContacts, totalAccounts, dealStatusStats, openTickets, sentCampaigns, activities] =

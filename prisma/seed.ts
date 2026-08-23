@@ -78,6 +78,7 @@ async function main() {
   await tx.emailTemplate.deleteMany({});
   await tx.segment.deleteMany({});
   await tx.authSession.deleteMany({});
+  await tx.loginThrottle.deleteMany({});
   await tx.user.deleteMany({});
 
   console.log("🌱 Seeding personnel structure (roles, regions, hierarchy)...");

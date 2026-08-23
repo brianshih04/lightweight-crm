@@ -26,23 +26,6 @@ export interface SessionUser {
   mustChangePassword: boolean;
 }
 
-// 巢狀關聯（商機負責人、活動記錄人等）使用的公開欄位；
-// mustChangePassword 屬帳號管理狀態，僅在 auth/session 與 users API 的明確 select 中取得
-export const publicUserSelect = {
-  id: true,
-  username: true,
-  name: true,
-  email: true,
-  avatar: true,
-  role: true,
-  department: true,
-  region: true,
-  title: true,
-  managerId: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.UserSelect;
-
 // 巢狀回應（商機/工單負責人、活動記錄人）的最小欄位：僅揭露顯示必需資訊，
 // 不含 username、email、部門、主管與時間戳
 export const nestedUserSelect = {

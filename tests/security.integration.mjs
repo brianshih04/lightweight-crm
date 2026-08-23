@@ -124,6 +124,9 @@ async function main() {
     env: {
       ...process.env,
       DATABASE_URL: `file:./${databaseName}`,
+      // CI 會固定設定 APP_ORIGIN（如 http://localhost:3000）；覆寫為本測試伺服器的
+      // 實際 origin，否則隨機 port 的 setup/login 會被同源驗證擋成 403
+      APP_ORIGIN: baseUrl,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -490,6 +493,7 @@ async function main() {
   // 負向資料隔離：沒有 deals:read 的角色（MARKETING*/SUPPORT）不得取得商機資料
   for (const [label, cookie] of [
     ["marketing_manager", marketingManagerCookie],
+    ["marketing", await login("role_marketing")],
     ["support", supportCookie],
   ]) {
     const relatedDeals = await request(
@@ -525,6 +529,14 @@ async function main() {
   assert.ok(
     marketingContacts.data.every((entry) => entry.dealCount === 0),
     "市場部角色不得看到聯絡人商機數"
+  );
+
+  // ORDER_ADMIN 的活動範圍為全市場：可看到其他市場商機的關聯活動（與其商機範圍一致）
+  const orderAdminDashboard = await request(baseUrl, "GET", "/api/dashboard", orderAdminCookie);
+  assert.equal(orderAdminDashboard.status, 200, orderAdminDashboard.text);
+  assert.ok(
+    orderAdminDashboard.data.activities.some((activity) => activity.deal?.region === "CENTRAL"),
+    "訂單管理員的活動時間軸應涵蓋其他市場的商機活動"
   );
 
   const managerReportCookie = await login("role_manager");

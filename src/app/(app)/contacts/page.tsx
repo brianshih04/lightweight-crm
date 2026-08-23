@@ -1,17 +1,32 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Users, Search, Plus, Mail, Phone, Building2, Tag, ChevronRight, X } from "lucide-react";
-import { formatRelativeTime } from "@/lib/utils";
-import { fetchAllPages } from "@/lib/api-client";
+import { Users, Plus, Mail, Phone, Building2, ChevronRight } from "lucide-react";
+import { apiErrorMessage, apiFetch, fetchAllPages } from "@/lib/api-client";
+import {
+  Button,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  inputClassName,
+  Modal,
+  PageHeader,
+  PageLoader,
+  SearchInput,
+  useToast,
+} from "@/components/ui";
 
 export default function ContactsPage() {
+  const toast = useToast();
   const [contacts, setContacts] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [formError, setFormError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
 
   // Form State
   const [name, setName] = useState("");
@@ -22,50 +37,64 @@ export default function ContactsPage() {
   const [tags, setTags] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchContacts = () => {
+  const fetchContacts = useCallback(async (query: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
-    fetchAllPages<any>(`/api/contacts?search=${encodeURIComponent(search)}`)
-      .then((data) => {
-        setContacts(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
+    setLoadError("");
+    try {
+      const data = await fetchAllPages<any>(`/api/contacts?search=${encodeURIComponent(query)}`, {
+        signal: controller.signal,
       });
-  };
+      setContacts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      console.error(err);
+      setLoadError(apiErrorMessage(err));
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }, []);
 
+  // SearchInput 已 debounce；此 effect 會在停止輸入後才觸發查詢
   useEffect(() => {
-    fetchContacts();
-  }, [search]);
+    fetchContacts(search);
+  }, [search, fetchContacts]);
 
   useEffect(() => {
     fetchAllPages<any>("/api/accounts")
-      .then((data) => setAccounts(Array.isArray(data) ? data : []));
+      .then((data) => setAccounts(Array.isArray(data) ? data : []))
+      .catch((err) => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    return () => abortRef.current?.abort();
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
     setSubmitting(true);
+    setFormError("");
     try {
-      const res = await fetch("/api/contacts", {
+      await apiFetch("/api/contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, phone, title, accountId, tags }),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setName("");
-        setEmail("");
-        setPhone("");
-        setTitle("");
-        setAccountId("");
-        setTags("");
-        fetchContacts();
-      }
+      setShowModal(false);
+      setName("");
+      setEmail("");
+      setPhone("");
+      setTitle("");
+      setAccountId("");
+      setTags("");
+      toast.success(`已建立聯絡人「${name}」`);
+      fetchContacts(search);
     } catch (err) {
       console.error(err);
+      setFormError(apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -73,40 +102,26 @@ export default function ContactsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-indigo-600" />
-            聯絡人管理 (Contacts Hub)
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            維護客戶關鍵決策者、聯絡資訊與 360 度歷程記錄。
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm shadow-indigo-600/20 transition"
-        >
+      <PageHeader
+        icon={Users}
+        title="聯絡人管理 (Contacts Hub)"
+        description="維護客戶關鍵決策者、聯絡資訊與 360 度歷程記錄。"
+      >
+        <Button onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" />
           <span>新增聯絡人</span>
-        </button>
-      </div>
+        </Button>
+      </PageHeader>
 
       {/* Filter & Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜尋聯絡人姓名、Email、職稱或標籤..."
-            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800"
-          />
-        </div>
-        <div className="text-xs text-slate-500">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="搜尋聯絡人姓名、Email、職稱或標籤..."
+          ariaLabel="搜尋聯絡人"
+        />
+        <div className="text-xs text-slate-500 shrink-0">
           共 <strong className="text-slate-800">{contacts.length}</strong> 位聯絡人
         </div>
       </div>
@@ -114,9 +129,19 @@ export default function ContactsPage() {
       {/* Contacts Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="py-12 text-center text-sm text-slate-500">載入聯絡人資料中...</div>
+          <PageLoader label="載入聯絡人資料中..." />
+        ) : loadError ? (
+          <div className="p-6">
+            <ErrorBanner message={loadError} onRetry={() => fetchContacts(search)} />
+          </div>
         ) : contacts.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">尚無符合條件的聯絡人</div>
+          <div className="p-6">
+            <EmptyState
+              icon={Users}
+              title={search ? "尚無符合條件的聯絡人" : "尚無聯絡人資料"}
+              description={search ? "請調整搜尋關鍵字後再試。" : "建立聯絡人後，即可檢視 360 度互動歷程。"}
+            />
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -220,114 +245,92 @@ export default function ContactsPage() {
 
       {/* Create Contact Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">新增客戶聯絡人</h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <Modal title="新增客戶聯絡人" onClose={() => setShowModal(false)}>
+          <form onSubmit={handleCreate} className="space-y-4 text-sm">
+            {formError && (
+              <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                {formError}
+              </p>
+            )}
+
+            <Field label="姓名" required>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例如：林志遠"
+                className={inputClassName}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="電子信箱">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="電話 / 手機">
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="0912-345-678"
+                  className={inputClassName}
+                />
+              </Field>
             </div>
 
-            <form onSubmit={handleCreate} className="mt-4 space-y-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  姓名 <span className="text-rose-500">*</span>
-                </label>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="職稱">
                 <input
                   type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：林志遠"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例如：資訊長 (CIO)"
+                  className={inputClassName}
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">電子信箱</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="user@example.com"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">電話 / 手機</label>
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="0912-345-678"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">職稱</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="例如：資訊長 (CIO)"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">所屬企業</label>
-                  <select
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                  >
-                    <option value="">選擇公司 (可選)</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">標籤 (逗號分隔)</label>
-                <input
-                  type="text"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder="例如：VIP, 決策主管, 2026年會"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium rounded-lg"
+              </Field>
+              <Field label="所屬企業">
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  className={inputClassName}
                 >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm"
-                >
-                  {submitting ? "建立中..." : "確認建立"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+                  <option value="">選擇公司 (可選)</option>
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <Field label="標籤 (逗號分隔)">
+              <input
+                type="text"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                placeholder="例如：VIP, 決策主管, 2026年會"
+                className={inputClassName}
+              />
+            </Field>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>
+                取消
+              </Button>
+              <Button type="submit" loading={submitting}>
+                {submitting ? "建立中..." : "確認建立"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

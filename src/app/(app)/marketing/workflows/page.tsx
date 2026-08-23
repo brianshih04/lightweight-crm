@@ -1,26 +1,31 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Workflow, Plus, Zap, ShieldCheck } from "lucide-react";
+import { apiErrorMessage, apiFetch, fetchApiResponse } from "@/lib/api-client";
 import {
-  Workflow,
-  Plus,
-  Zap,
-  CheckCircle2,
-  ArrowRight,
-  Play,
-  Settings2,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { formatRelativeTime } from "@/lib/utils";
+  Button,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  inputClassName,
+  LoadMoreButton,
+  Modal,
+  PageHeader,
+  PageLoader,
+  useToast,
+} from "@/components/ui";
 
 export default function WorkflowsPage() {
+  const toast = useToast();
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -28,39 +33,47 @@ export default function WorkflowsPage() {
   const [triggerEvent, setTriggerEvent] = useState("NEW_LEAD");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchWorkflows = async (cursor?: string) => {
+  const fetchWorkflows = useCallback(async (cursor?: string) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/marketing/workflows?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
-      if (!response.ok) throw new Error(`Workflows request failed: ${response.status}`);
+      const response = await fetchApiResponse(
+        `/api/marketing/workflows?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      );
       const result = await response.json();
       setNextCursor(response.headers.get("X-Next-Cursor"));
-      setWorkflows((current) => cursor ? [...current, ...(Array.isArray(result) ? result : [])] : (Array.isArray(result) ? result : []));
+      setWorkflows((current) =>
+        cursor ? [...current, ...(Array.isArray(result) ? result : [])] : Array.isArray(result) ? result : []
+      );
     } catch (error) {
       console.error(error);
-      setLoadError("無法載入自動化流程，請稍後再試。");
+      setLoadError(apiErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchWorkflows();
-  }, []);
+  }, [fetchWorkflows]);
 
   const toggleWorkflow = async (id: string, currentStatus: boolean) => {
+    setTogglingId(id);
     try {
-      await fetch("/api/marketing/workflows", {
+      await apiFetch("/api/marketing/workflows", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, isActive: !currentStatus }),
       });
+      toast.success(currentStatus ? "已暫停自動化流程" : "已啟用自動化流程");
       fetchWorkflows();
     } catch (err) {
       console.error(err);
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -68,8 +81,9 @@ export default function WorkflowsPage() {
     e.preventDefault();
     if (!name) return;
     setSubmitting(true);
+    setFormError("");
     try {
-      const res = await fetch("/api/marketing/workflows", {
+      await apiFetch("/api/marketing/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -80,14 +94,14 @@ export default function WorkflowsPage() {
           actions: [{ type: "SEND_EMAIL", note: "發送自動化通知信" }],
         }),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setName("");
-        setDescription("");
-        fetchWorkflows();
-      }
+      setShowModal(false);
+      setName("");
+      setDescription("");
+      toast.success(`已建立自動化流程「${name}」`);
+      fetchWorkflows();
     } catch (err) {
       console.error(err);
+      setFormError(apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -95,36 +109,37 @@ export default function WorkflowsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Workflow className="w-6 h-6 text-indigo-600" />
-            自動化工作流引擎 (Marketing Workflows)
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            設定事件觸發規則、自動派單、發送郵件與跨部門任務指派。
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm shadow-indigo-600/20 transition"
-        >
+      <PageHeader
+        icon={Workflow}
+        title="自動化工作流引擎 (Marketing Workflows)"
+        description="設定事件觸發規則、自動派單、發送郵件與跨部門任務指派。"
+      >
+        <Button onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" />
           <span>建立自動化流程</span>
-        </button>
-      </div>
+        </Button>
+      </PageHeader>
+
+      {loadError && !loading && <ErrorBanner message={loadError} onRetry={() => fetchWorkflows()} />}
 
       {/* Workflows List */}
       {loading ? (
-        <div className="py-16 text-center text-sm text-slate-500">載入自動化流程中...</div>
+        <PageLoader label="載入自動化流程中..." />
+      ) : workflows.length === 0 && !loadError ? (
+        <EmptyState
+          icon={Workflow}
+          title="尚無自動化流程"
+          description="建立事件觸發的工作流，例如新線索進單自動發送通知信。"
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {workflows.map((wf) => {
-            let actions = [];
+            let actions: any[] = [];
             try {
               actions = typeof wf.actions === "string" ? JSON.parse(wf.actions) : wf.actions;
-            } catch (e) {}
+            } catch {
+              actions = [];
+            }
 
             return (
               <div
@@ -149,8 +164,13 @@ export default function WorkflowsPage() {
 
                   {/* Switch */}
                   <button
+                    type="button"
+                    role="switch"
+                    aria-checked={wf.isActive}
+                    aria-label={`${wf.isActive ? "暫停" : "啟用"}工作流 ${wf.name}`}
+                    disabled={togglingId === wf.id}
                     onClick={() => toggleWorkflow(wf.id, wf.isActive)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 disabled:opacity-50 ${
                       wf.isActive ? "bg-indigo-600" : "bg-slate-200"
                     }`}
                   >
@@ -165,18 +185,20 @@ export default function WorkflowsPage() {
                 {/* Trigger -> Action Flow Diagram */}
                 <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-2 text-xs">
                   <div className="flex items-center gap-2 text-slate-700">
-                    <span className="font-bold text-indigo-600">⚡ 觸發事件：</span>
+                    <span className="font-bold text-indigo-600">觸發事件：</span>
                     <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold">
                       {wf.triggerEvent === "NEW_LEAD"
                         ? "建立新潛在線索 (New Lead)"
                         : wf.triggerEvent === "DEAL_WON"
-                        ? "商機贏單成交 (Deal Won)"
-                        : wf.triggerEvent}
+                          ? "商機贏單成交 (Deal Won)"
+                          : wf.triggerEvent === "TICKET_CREATED"
+                            ? "新客服工單建立 (Ticket Created)"
+                            : wf.triggerEvent}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2 text-slate-700">
-                    <span className="font-bold text-emerald-600">🎯 執行動作：</span>
+                    <span className="font-bold text-emerald-600">執行動作：</span>
                     <div className="flex flex-wrap gap-1.5">
                       {actions.map((act: any, idx: number) => (
                         <span
@@ -184,12 +206,12 @@ export default function WorkflowsPage() {
                           className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600"
                         >
                           {act.type === "SEND_EMAIL"
-                            ? "✉️ 發送郵件"
+                            ? "發送郵件"
                             : act.type === "CREATE_TASK"
-                            ? "📋 建立跟進任務"
-                            : act.type === "CREATE_TICKET"
-                            ? "🎧 建立售後工單"
-                            : act.type}
+                              ? "建立跟進任務"
+                              : act.type === "CREATE_TICKET"
+                                ? "建立售後工單"
+                                : act.type}
                         </span>
                       ))}
                     </div>
@@ -209,89 +231,63 @@ export default function WorkflowsPage() {
         </div>
       )}
 
-      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
       {nextCursor && !loading && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => fetchWorkflows(nextCursor)}
-            disabled={loadingMore}
-            className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
-          >
-            {loadingMore ? "載入中..." : "載入更多流程"}
-          </button>
-        </div>
+        <LoadMoreButton loading={loadingMore} onClick={() => fetchWorkflows(nextCursor!)} label="載入更多流程" />
       )}
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">建立自動化工作流程</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <Modal title="建立自動化工作流程" onClose={() => setShowModal(false)}>
+          <form onSubmit={handleCreate} className="space-y-4 text-sm">
+            {formError && (
+              <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                {formError}
+              </p>
+            )}
+
+            <Field label="工作流名稱" required>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例如：新客戶諮詢自動指派"
+                className={inputClassName}
+              />
+            </Field>
+
+            <Field label="觸發事件">
+              <select
+                value={triggerEvent}
+                onChange={(e) => setTriggerEvent(e.target.value)}
+                className={inputClassName}
+              >
+                <option value="NEW_LEAD">新潛在線索建立 (NEW_LEAD)</option>
+                <option value="DEAL_WON">商機結案贏單 (DEAL_WON)</option>
+                <option value="TICKET_CREATED">新客服工單建立 (TICKET_CREATED)</option>
+              </select>
+            </Field>
+
+            <Field label="流程描述">
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="說明此自動化流程的目的與執行條件..."
+                className={`${inputClassName} resize-none`}
+              />
+            </Field>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>
+                取消
+              </Button>
+              <Button type="submit" loading={submitting}>
+                {submitting ? "建立中..." : "確認建立"}
+              </Button>
             </div>
-
-            <form onSubmit={handleCreate} className="mt-4 space-y-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  工作流名稱 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：新客戶諮詢自動指派"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">觸發事件</label>
-                <select
-                  value={triggerEvent}
-                  onChange={(e) => setTriggerEvent(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                >
-                  <option value="NEW_LEAD">新潛在線索建立 (NEW_LEAD)</option>
-                  <option value="DEAL_WON">商機結案贏單 (DEAL_WON)</option>
-                  <option value="TICKET_CREATED">新客服工單建立 (TICKET_CREATED)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">流程描述</label>
-                <textarea
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="說明此自動化流程的目的與執行條件..."
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 resize-none"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium rounded-lg"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm"
-                >
-                  {submitting ? "建立中..." : "確認建立"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

@@ -1,34 +1,33 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
-  Mail,
-  Phone,
-  Tag,
   Headset,
   Send,
   Clock,
   Briefcase,
 } from "lucide-react";
-import { formatCurrency, formatRelativeTime, TICKET_STATUS_CONFIG } from "@/lib/utils";
+import { formatCurrency, formatDate, formatRelativeTime, TICKET_STATUS_CONFIG } from "@/lib/utils";
+import { apiErrorMessage, apiFetch, fetchApiResponse } from "@/lib/api-client";
+import { Button, EmptyState, ErrorBanner, PageLoader, useToast } from "@/components/ui";
 
 type RelatedType = "deals" | "tickets" | "activities";
 
 async function fetchRelatedPage(id: string, type: RelatedType, cursor?: string) {
-  const response = await fetch(
+  const response = await fetchApiResponse(
     `/api/contacts/${id}/related?type=${type}&limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
   );
-  if (!response.ok) throw new Error(`${type} request failed: ${response.status}`);
   return { items: await response.json(), nextCursor: response.headers.get("X-Next-Cursor") };
 }
 
 export default function ContactDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const toast = useToast();
 
   const [contact, setContact] = useState<any>(null);
   const [deals, setDeals] = useState<any[]>([]);
@@ -46,18 +45,17 @@ export default function ContactDetailPage() {
   const [noteContent, setNoteContent] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  const fetchContact = async () => {
+  const fetchContact = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
-      const [overviewResponse, dealPage, ticketPage, activityPage] = await Promise.all([
-        fetch(`/api/contacts/${id}`),
+      const [overview, dealPage, ticketPage, activityPage] = await Promise.all([
+        apiFetch<any>(`/api/contacts/${id}`),
         fetchRelatedPage(id, "deals"),
         fetchRelatedPage(id, "tickets"),
         fetchRelatedPage(id, "activities"),
       ]);
-      if (!overviewResponse.ok) throw new Error(`Contact request failed: ${overviewResponse.status}`);
-      setContact(await overviewResponse.json());
+      setContact(overview);
       setDeals(dealPage.items);
       setTickets(ticketPage.items);
       setActivities(activityPage.items);
@@ -68,17 +66,16 @@ export default function ContactDetailPage() {
       });
     } catch (error) {
       console.error(error);
-      setLoadError("無法載入聯絡人 360 資料，請稍後再試。");
+      setLoadError(apiErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   const loadMore = async (type: RelatedType) => {
     const cursor = nextCursors[type];
     if (!cursor) return;
     setRelatedLoading(type);
-    setLoadError("");
     try {
       const page = await fetchRelatedPage(id, type, cursor);
       if (type === "deals") setDeals((current) => [...current, ...page.items]);
@@ -87,7 +84,7 @@ export default function ContactDetailPage() {
       setNextCursors((current) => ({ ...current, [type]: page.nextCursor }));
     } catch (error) {
       console.error(error);
-      setLoadError("無法載入更多資料，請稍後再試。");
+      toast.error(apiErrorMessage(error));
     } finally {
       setRelatedLoading(null);
     }
@@ -95,14 +92,14 @@ export default function ContactDetailPage() {
 
   useEffect(() => {
     fetchContact();
-  }, [id]);
+  }, [fetchContact]);
 
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteContent && !noteTitle) return;
     setAddingNote(true);
     try {
-      const res = await fetch(`/api/contacts/${id}`, {
+      await apiFetch(`/api/contacts/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,24 +108,30 @@ export default function ContactDetailPage() {
           content: noteContent,
         }),
       });
-      if (res.ok) {
-        setNoteTitle("");
-        setNoteContent("");
-        fetchContact();
-      }
+      setNoteTitle("");
+      setNoteContent("");
+      toast.success("已新增互動紀錄");
+      fetchContact();
     } catch (err) {
       console.error(err);
+      toast.error(apiErrorMessage(err));
     } finally {
       setAddingNote(false);
     }
   };
 
   if (loading) {
+    return <PageLoader label="載入客戶 360 度資訊中..." />;
+  }
+
+  if (loadError) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-3 text-slate-500 text-sm">
-          <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-          載入客戶 360 度資訊中...
+      <div className="py-4">
+        <ErrorBanner message={loadError} onRetry={fetchContact} />
+        <div className="mt-4 text-center">
+          <Link href="/contacts" className="text-indigo-600 font-semibold text-sm inline-flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> 返回聯絡人列表
+          </Link>
         </div>
       </div>
     );
@@ -136,14 +139,21 @@ export default function ContactDetailPage() {
 
   if (!contact || contact.error) {
     return (
-      <div className="text-center py-16 space-y-3">
-        <p className="text-slate-500">找不到該聯絡人資料</p>
-        <Link href="/contacts" className="text-indigo-600 font-semibold text-sm inline-flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> 返回聯絡人列表
-        </Link>
+      <div className="py-8">
+        <EmptyState title="找不到該聯絡人資料" description="此聯絡人可能已被刪除，或您沒有檢視權限。">
+          <Link href="/contacts" className="text-indigo-600 font-semibold text-sm inline-flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> 返回聯絡人列表
+          </Link>
+        </EmptyState>
       </div>
     );
   }
+
+  const tabs = [
+    { key: "TIMELINE" as const, icon: Clock, label: "全歷程時間軸 (360° Timeline)" },
+    { key: "DEALS" as const, icon: Briefcase, label: `關聯商機 (${contact.dealCount || 0})` },
+    { key: "TICKETS" as const, icon: Headset, label: `售後工單 (${contact.ticketCount || 0})` },
+  ];
 
   return (
     <div className="space-y-6">
@@ -197,40 +207,27 @@ export default function ContactDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-6 text-sm font-semibold">
-        <button
-          onClick={() => setActiveTab("TIMELINE")}
-          className={`pb-3 transition flex items-center gap-2 ${
-            activeTab === "TIMELINE"
-              ? "border-b-2 border-indigo-600 text-indigo-600"
-              : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          全歷程時間軸 (360° Timeline)
-        </button>
-        <button
-          onClick={() => setActiveTab("DEALS")}
-          className={`pb-3 transition flex items-center gap-2 ${
-            activeTab === "DEALS"
-              ? "border-b-2 border-indigo-600 text-indigo-600"
-              : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Briefcase className="w-4 h-4" />
-          關聯商機 ({contact.dealCount || 0})
-        </button>
-        <button
-          onClick={() => setActiveTab("TICKETS")}
-          className={`pb-3 transition flex items-center gap-2 ${
-            activeTab === "TICKETS"
-              ? "border-b-2 border-indigo-600 text-indigo-600"
-              : "text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Headset className="w-4 h-4" />
-          售後工單 ({contact.ticketCount || 0})
-        </button>
+      <div role="tablist" aria-label="客戶 360 資料分頁" className="flex border-b border-slate-200 gap-6 text-sm font-semibold">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveTab(tab.key)}
+              className={`pb-3 transition flex items-center gap-2 border-b-2 -mb-px ${
+                isActive
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Tab Contents */}
@@ -243,11 +240,12 @@ export default function ContactDetailPage() {
               <form onSubmit={handleAddActivity} className="space-y-3">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                   <span className="text-xs font-bold text-slate-700">記錄互動：</span>
-                  <div className="flex gap-1.5 text-xs">
+                  <div className="flex gap-1.5 text-xs" role="group" aria-label="互動類型">
                     {(["NOTE", "CALL", "MEETING"] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
+                        aria-pressed={noteType === t}
                         onClick={() => setNoteType(t)}
                         className={`px-2.5 py-1 rounded-md font-medium transition ${
                           noteType === t
@@ -255,7 +253,7 @@ export default function ContactDetailPage() {
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
-                        {t === "NOTE" ? "📝 備忘筆記" : t === "CALL" ? "📞 通話" : "🤝 會議"}
+                        {t === "NOTE" ? "備忘筆記" : t === "CALL" ? "通話" : "會議"}
                       </button>
                     ))}
                   </div>
@@ -264,6 +262,7 @@ export default function ContactDetailPage() {
                 <input
                   type="text"
                   placeholder="標題（例如：Q3 導入預算討論會議）"
+                  aria-label="互動標題"
                   value={noteTitle}
                   onChange={(e) => setNoteTitle(e.target.value)}
                   className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
@@ -272,6 +271,7 @@ export default function ContactDetailPage() {
                 <textarea
                   rows={3}
                   required
+                  aria-label="互動內容"
                   placeholder="輸入詳細溝通內容、決策重點或客戶需求..."
                   value={noteContent}
                   onChange={(e) => setNoteContent(e.target.value)}
@@ -279,14 +279,10 @@ export default function ContactDetailPage() {
                 />
 
                 <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={addingNote}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm"
-                  >
+                  <Button type="submit" size="sm" loading={addingNote}>
                     <Send className="w-3.5 h-3.5" />
                     <span>{addingNote ? "儲存中..." : "新增紀錄"}</span>
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -298,8 +294,8 @@ export default function ContactDetailPage() {
                   key={act.id}
                   className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-start gap-3.5"
                 >
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5 text-base">
-                    {act.type === "CALL" ? "📞" : act.type === "MEETING" ? "🤝" : act.type === "STAGE_CHANGE" ? "🚀" : "📝"}
+                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4 text-slate-500" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
@@ -322,7 +318,7 @@ export default function ContactDetailPage() {
                 </div>
               ))}
               {activities.length === 0 && (
-                <div className="py-10 text-center text-sm text-slate-400">尚無互動紀錄</div>
+                <EmptyState title="尚無互動紀錄" description="使用上方輸入框記錄通話、會議或備忘筆記。" />
               )}
               {nextCursors.activities && (
                 <button
@@ -390,7 +386,9 @@ export default function ContactDetailPage() {
       {activeTab === "DEALS" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {deals.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-400">尚無關聯商機</div>
+            <div className="p-6">
+              <EmptyState icon={Briefcase} title="尚無關聯商機" description="在商機看板建立商機時選擇此聯絡人，即會顯示於此。" />
+            </div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -412,7 +410,7 @@ export default function ContactDetailPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-500">
-                      {deal.expectedCloseDate ? new Date(deal.expectedCloseDate).toLocaleDateString() : "-"}
+                      {deal.expectedCloseDate ? formatDate(deal.expectedCloseDate, "yyyy-MM-dd") : "-"}
                     </td>
                   </tr>
                 ))}
@@ -436,7 +434,9 @@ export default function ContactDetailPage() {
       {activeTab === "TICKETS" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {tickets.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-400">尚無售後工單記錄</div>
+            <div className="p-6">
+              <EmptyState icon={Headset} title="尚無售後工單記錄" description="建立工單時選擇此聯絡人，即會顯示於此。" />
+            </div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -480,7 +480,6 @@ export default function ContactDetailPage() {
           )}
         </div>
       )}
-      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
     </div>
   );
 }

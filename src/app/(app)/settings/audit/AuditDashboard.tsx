@@ -1,15 +1,14 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Ban,
   CheckCircle2,
-  ChevronDown,
-  CircleAlert,
   RefreshCw,
   Search,
   ShieldCheck,
+  ShieldAlert,
   XCircle,
 } from "lucide-react";
 import type {
@@ -20,6 +19,8 @@ import type {
   SecurityStatus,
   SecuritySummaryDto,
 } from "@/lib/audit-types";
+import { apiErrorMessage, fetchApiResponse } from "@/lib/api-client";
+import { Button, ErrorBanner, inputClassName, LoadMoreButton } from "@/components/ui";
 
 interface Filters {
   action: string;
@@ -28,18 +29,6 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = { action: "", resource: "", result: "" };
-const pressable = "transition-[transform,background-color,border-color,color] duration-150 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98]";
-
-async function readJson<T>(response: Response): Promise<T> {
-  const value: unknown = await response.json();
-  if (!response.ok) {
-    const message = value && typeof value === "object" && "error" in value
-      ? String((value as { error: unknown }).error)
-      : `Request failed (${response.status})`;
-    throw new Error(message);
-  }
-  return value as T;
-}
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat("zh-TW", {
@@ -83,8 +72,14 @@ function alertLabel(alert: SecurityAlertDto) {
   return labels[alert.code];
 }
 
+async function readJson<T>(path: string): Promise<T> {
+  const response = await fetchApiResponse(path, { cache: "no-store" });
+  return response.json() as Promise<T>;
+}
+
 export function AuditDashboard() {
   const [summary, setSummary] = useState<SecuritySummaryDto | null>(null);
+  const summaryRef = useRef<SecuritySummaryDto | null>(null);
   const [events, setEvents] = useState<AuditEventDto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -93,7 +88,7 @@ export function AuditDashboard() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
-  const load = async (activeFilters: Filters, cursor?: string, append = false) => {
+  const load = useCallback(async (activeFilters: Filters, cursor?: string, append = false) => {
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError("");
@@ -104,28 +99,29 @@ export function AuditDashboard() {
       if (activeFilters.result) query.set("result", activeFilters.result);
       if (cursor) query.set("cursor", cursor);
 
-      const eventPromise = fetch(`/api/audit?${query}`, { cache: "no-store" }).then((response) => readJson<AuditPageDto>(response));
+      const pagePromise = readJson<AuditPageDto>(`/api/audit?${query}`);
       const [page, nextSummary] = await Promise.all([
-        eventPromise,
-        append && summary
-          ? Promise.resolve(summary)
-          : fetch("/api/audit/summary", { cache: "no-store" }).then((response) => readJson<SecuritySummaryDto>(response)),
+        pagePromise,
+        append && summaryRef.current
+          ? Promise.resolve(summaryRef.current)
+          : readJson<SecuritySummaryDto>("/api/audit/summary"),
       ]);
 
+      summaryRef.current = nextSummary;
       setSummary(nextSummary);
-      setEvents((current) => append ? [...current, ...page.items] : page.items);
+      setEvents((current) => (append ? [...current, ...page.items] : page.items));
       setNextCursor(page.nextCursor);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入稽核資料");
+      setError(apiErrorMessage(loadError));
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load(EMPTY_FILTERS);
-  }, []);
+  }, [load]);
 
   const applyFilters = (event: FormEvent) => {
     event.preventDefault();
@@ -148,33 +144,23 @@ export function AuditDashboard() {
         <div>
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">
             <ShieldCheck className="h-4 w-4" />
-            Admin security operations
+            安全營運中心 (Admin Only)
           </div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">安全稽核與告警</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 flex items-center gap-2.5">
+            <ShieldAlert className="w-6 h-6 text-indigo-600" />
+            安全稽核與告警
+          </h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
             追蹤身份驗證、權限拒絕與重要資料異動。來源以不可逆 HMAC 假名顯示，不保存原始 IP。
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load(appliedFilters)}
-          disabled={loading}
-          className={`${pressable} inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 disabled:pointer-events-none disabled:opacity-50`}
-        >
+        <Button variant="secondary" onClick={() => void load(appliedFilters)} disabled={loading}>
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           重新整理
-        </button>
+        </Button>
       </div>
 
-      {error && (
-        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-bold">稽核資料載入失敗</p>
-            <p className="mt-0.5 text-xs text-rose-700">{error}</p>
-          </div>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onRetry={() => void load(appliedFilters)} />}
 
       <section aria-label="安全狀態摘要" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
@@ -240,15 +226,15 @@ export function AuditDashboard() {
           <form onSubmit={applyFilters} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_180px_auto]">
             <label className="space-y-1 text-xs font-bold text-slate-600">
               <span>動作</span>
-              <input value={filters.action} onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))} maxLength={50} placeholder="例如 login、create" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15" />
+              <input value={filters.action} onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))} maxLength={50} placeholder="例如 login、create" className={inputClassName} />
             </label>
             <label className="space-y-1 text-xs font-bold text-slate-600">
               <span>資源</span>
-              <input value={filters.resource} onChange={(event) => setFilters((current) => ({ ...current, resource: event.target.value }))} maxLength={50} placeholder="例如 auth、users" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15" />
+              <input value={filters.resource} onChange={(event) => setFilters((current) => ({ ...current, resource: event.target.value }))} maxLength={50} placeholder="例如 auth、users" className={inputClassName} />
             </label>
             <label className="space-y-1 text-xs font-bold text-slate-600">
               <span>結果</span>
-              <select value={filters.result} onChange={(event) => setFilters((current) => ({ ...current, result: event.target.value as Filters["result"] }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15">
+              <select value={filters.result} onChange={(event) => setFilters((current) => ({ ...current, result: event.target.value as Filters["result"] }))} className={inputClassName}>
                 <option value="">全部結果</option>
                 <option value="SUCCESS">SUCCESS</option>
                 <option value="DENIED">DENIED</option>
@@ -256,12 +242,12 @@ export function AuditDashboard() {
               </select>
             </label>
             <div className="flex items-end gap-2">
-              <button type="submit" className={`${pressable} inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm shadow-indigo-600/20 hover:bg-indigo-700`}>
+              <Button type="submit" className="flex-1">
                 <Search className="h-4 w-4" />套用
-              </button>
-              <button type="button" onClick={clearFilters} aria-label="清除篩選" className={`${pressable} rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800`}>
+              </Button>
+              <Button type="button" variant="secondary" onClick={clearFilters} aria-label="清除篩選">
                 <XCircle className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </form>
         </div>
@@ -320,11 +306,8 @@ export function AuditDashboard() {
         )}
 
         {nextCursor && (
-          <div className="border-t border-slate-200 bg-slate-50/60 p-4 text-center">
-            <button type="button" disabled={loadingMore} onClick={() => void load(appliedFilters, nextCursor, true)} className={`${pressable} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:border-indigo-200 hover:text-indigo-700 disabled:pointer-events-none disabled:opacity-50`}>
-              {loadingMore ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ChevronDown className="h-4 w-4" />}
-              {loadingMore ? "載入中…" : "載入更早事件"}
-            </button>
+          <div className="border-t border-slate-200 bg-slate-50/60 p-4">
+            <LoadMoreButton loading={loadingMore} onClick={() => void load(appliedFilters, nextCursor, true)} label="載入更早事件" />
           </div>
         )}
       </section>

@@ -1,28 +1,56 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Users,
   Plus,
   Shield,
-  MapPin,
-  Building2,
-  KeyRound,
   Edit2,
   Trash2,
   Award,
-  CheckCircle2,
-  X,
-  Lock,
   UserCheck,
 } from "lucide-react";
-import { REGIONS } from "@/lib/utils";
-import { fetchAllPages } from "@/lib/api-client";
+import { REGIONS, roleLabel } from "@/lib/utils";
+import { apiErrorMessage, apiFetch, fetchAllPages } from "@/lib/api-client";
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  inputClassName,
+  Modal,
+  PageLoader,
+  useToast,
+} from "@/components/ui";
+
+const ROLE_OPTIONS = [
+  { value: "SALES", label: "Sales (負責所屬區域)" },
+  { value: "ORDER_ADMIN", label: "訂單管理員 (Sales Assistant)" },
+  { value: "SALES_MANAGER", label: "區域主管 (Regional Manager)" },
+  { value: "MARKETING_MANAGER", label: "市場部主管 (Marketing Manager)" },
+  { value: "GM", label: "總經理 (GM - 全域決策分析)" },
+  { value: "ADMIN", label: "系統管理員 (Admin - 系統全管理)" },
+  { value: "MARKETING", label: "市場部專員 (Marketing)" },
+  { value: "SUPPORT", label: "客服專員 (Customer Support)" },
+];
+
+const REGION_OPTIONS = [
+  { value: "NORTH", label: "北部區域 (台北/新竹)" },
+  { value: "CENTRAL", label: "中部區域 (台中/彰化)" },
+  { value: "SOUTH", label: "南部區域 (高雄/台南)" },
+  { value: "OVERSEAS", label: "海外與亞太區" },
+  { value: "ALL", label: "全區 / 總部 (ALL)" },
+];
+
+const MANAGER_ROLES = ["GM", "MARKETING_MANAGER", "SALES_MANAGER", "ADMIN", "SUPPORT"];
 
 export default function UsersManagementPage() {
+  const toast = useToast();
   const [users, setUsers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [filterRegion, setFilterRegion] = useState("ALL");
 
   // Add User Modal State
@@ -48,38 +76,41 @@ export default function UsersManagementPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editManagerId, setEditManagerId] = useState("");
   const [editPassword, setEditPassword] = useState("");
+  const [editErrorMsg, setEditErrorMsg] = useState("");
 
-  const fetchUsers = () => {
+  // Delete confirm state
+  const [deletingUser, setDeletingUser] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
-    fetchAllPages<any>("/api/users")
-      .then((data) => {
-        setUsers(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
+    setLoadError("");
+    try {
+      const data = await fetchAllPages<any>("/api/users");
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setLoadError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => res.json())
+    apiFetch<any>("/api/auth/me")
       .then((d) => {
-        if (d.authenticated && d.user) {
-          setCurrentUser(d.user);
-        }
-      });
+        if (d.authenticated && d.user) setCurrentUser(d.user);
+      })
+      .catch((err) => console.error(err));
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setSubmitting(true);
-
     try {
-      const res = await fetch("/api/users", {
+      await apiFetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -94,14 +125,6 @@ export default function UsersManagementPage() {
           managerId: managerId || null,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "建立人員失敗");
-        setSubmitting(false);
-        return;
-      }
-
       setShowAddModal(false);
       setUsername("");
       setPassword("");
@@ -109,10 +132,11 @@ export default function UsersManagementPage() {
       setEmail("");
       setTitle("業務代表");
       setManagerId("");
+      toast.success(`已建立成員帳號「${name}」`);
       fetchUsers();
     } catch (err) {
       console.error(err);
-      setErrorMsg("伺服器連線異常");
+      setErrorMsg(apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -127,15 +151,16 @@ export default function UsersManagementPage() {
     setEditTitle(user.title);
     setEditManagerId(user.managerId || "");
     setEditPassword("");
+    setEditErrorMsg("");
   };
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
     setSubmitting(true);
-
+    setEditErrorMsg("");
     try {
-      const res = await fetch(`/api/users/${editingUser.id}`, {
+      await apiFetch(`/api/users/${editingUser.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,30 +173,30 @@ export default function UsersManagementPage() {
           password: editPassword || undefined,
         }),
       });
-
-      if (res.ok) {
-        setEditingUser(null);
-        fetchUsers();
-      }
+      setEditingUser(null);
+      toast.success(`已更新「${editName}」的資料`);
+      fetchUsers();
     } catch (err) {
       console.error(err);
+      setEditErrorMsg(apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteUser = async (user: any) => {
-    if (!confirm(`確定要刪除成員「${user.name} (${user.username})」嗎？`)) return;
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return;
+    setDeleting(true);
     try {
-      const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
-      if (res.ok) {
-        fetchUsers();
-      } else {
-        const d = await res.json();
-        alert(d.error || "刪除失敗");
-      }
+      await apiFetch(`/api/users/${deletingUser.id}`, { method: "DELETE" });
+      toast.success(`已停用並移除「${deletingUser.name}」（軟刪除，歷史紀錄保留）`);
+      setDeletingUser(null);
+      fetchUsers();
     } catch (err) {
       console.error(err);
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -179,7 +204,7 @@ export default function UsersManagementPage() {
   const isGM = currentUser?.role === "GM";
   const isFullManager = isAdmin || isGM;
 
-  const managers = users.filter((u) => ["GM", "MARKETING_MANAGER", "SALES_MANAGER", "ADMIN"].includes(u.role));
+  const managers = users.filter((u) => MANAGER_ROLES.includes(u.role));
   const filteredUsers = filterRegion === "ALL" ? users : users.filter((u) => u.region === filterRegion);
 
   return (
@@ -195,7 +220,7 @@ export default function UsersManagementPage() {
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 flex items-center gap-2.5">
             <Users className="w-6 h-6 text-indigo-600" />
-            人員帳號與負責區域管理 (Personnel & Territory Management)
+            人員帳號與負責區域管理
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Admin 系統管理者可在此建立成員帳號，配置「總經理／市場部主管／區域主管／Sales」階層與訂單管理員支援角色。
@@ -203,38 +228,35 @@ export default function UsersManagementPage() {
         </div>
 
         {isFullManager && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm shadow-indigo-600/20 transition"
-          >
+          <Button onClick={() => setShowAddModal(true)}>
             <Plus className="w-4 h-4" />
             <span>建立新成員帳號</span>
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Territory Summary Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" role="group" aria-label="依區域篩選">
         {Object.entries(REGIONS).map(([key, reg]) => {
           const count = users.filter((u) => (key === "ALL" ? true : u.region === key)).length;
+          const active = filterRegion === key;
           return (
             <button
               key={key}
+              type="button"
+              aria-pressed={active}
               onClick={() => setFilterRegion(key)}
               className={`p-4 rounded-2xl border text-left transition ${
-                filterRegion === key
+                active
                   ? "bg-slate-900 text-white border-slate-900 shadow-md"
                   : "bg-white text-slate-800 border-slate-200 hover:border-indigo-300"
               }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold truncate">{reg.label.split(" ")[0]}</span>
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: reg.dot }}
-                />
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: reg.dot }} />
               </div>
-              <p className={`text-2xl font-extrabold mt-2 ${filterRegion === key ? "text-white" : "text-indigo-600"}`}>
+              <p className={`text-2xl font-extrabold mt-2 ${active ? "text-white" : "text-indigo-600"}`}>
                 {count} <span className="text-xs font-normal">人</span>
               </p>
             </button>
@@ -254,7 +276,15 @@ export default function UsersManagementPage() {
         </div>
 
         {loading ? (
-          <div className="py-16 text-center text-sm text-slate-500">載入人員資料中...</div>
+          <PageLoader label="載入人員資料中..." />
+        ) : loadError ? (
+          <div className="p-6">
+            <ErrorBanner message={loadError} onRetry={fetchUsers} />
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-6">
+            <EmptyState icon={Users} title="此區域尚無成員" description="點擊上方區域卡切換篩選，或建立新成員帳號。" />
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -286,12 +316,12 @@ export default function UsersManagementPage() {
                               isUserAdmin
                                 ? "bg-rose-600"
                                 : isUserGM
-                                ? "bg-amber-600"
-                                : isUserMarketingMgr
-                                ? "bg-emerald-600"
-                                : isUserMgr
-                                ? "bg-indigo-600"
-                                : "bg-slate-600"
+                                  ? "bg-amber-600"
+                                  : isUserMarketingMgr
+                                    ? "bg-emerald-600"
+                                    : isUserMgr
+                                      ? "bg-indigo-600"
+                                      : "bg-slate-600"
                             }`}
                           >
                             {user.name.slice(0, 1)}
@@ -311,23 +341,23 @@ export default function UsersManagementPage() {
                       <td className="px-6 py-4">
                         {isUserAdmin ? (
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
-                            <Shield className="w-3 h-3 text-rose-600" /> 系統管理員 (Admin)
+                            <Shield className="w-3 h-3 text-rose-600" /> {roleLabel(user.role)}
                           </span>
                         ) : isUserGM ? (
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
-                            <Award className="w-3 h-3 text-amber-600" /> 總經理 (GM)
+                            <Award className="w-3 h-3 text-amber-600" /> {roleLabel(user.role)}
                           </span>
                         ) : isUserMarketingMgr ? (
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            市場部主管 (Marketing Manager)
+                            {roleLabel(user.role)}
                           </span>
                         ) : isUserMgr ? (
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            區域主管 (Regional Manager)
+                            {roleLabel(user.role)}
                           </span>
                         ) : (
                           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
-                            {user.role === "SALES" ? "Sales" : user.role === "ORDER_ADMIN" ? "訂單管理員 (Sales Assistant)" : user.role === "MARKETING" ? "市場部專員" : "客服專員"}
+                            {roleLabel(user.role)}
                           </span>
                         )}
                       </td>
@@ -358,6 +388,7 @@ export default function UsersManagementPage() {
                           <>
                             <button
                               onClick={() => handleOpenEdit(user)}
+                              aria-label={`編輯 ${user.name}`}
                               className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-indigo-600 rounded-lg transition"
                               title="編輯人員與分配區域"
                             >
@@ -365,7 +396,8 @@ export default function UsersManagementPage() {
                             </button>
                             {!isUserAdmin && (
                               <button
-                                onClick={() => handleDeleteUser(user)}
+                                onClick={() => setDeletingUser(user)}
+                                aria-label={`刪除 ${user.name}`}
                                 className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-rose-600 rounded-lg transition"
                                 title="刪除帳號"
                               >
@@ -386,289 +418,221 @@ export default function UsersManagementPage() {
 
       {/* Add User Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-indigo-600" />
-                建立新成員帳號與分配責任區域
-              </h2>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <Modal title="建立新成員帳號與分配責任區域" onClose={() => setShowAddModal(false)} size="lg">
+          {errorMsg && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700" role="alert">
+              {errorMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleCreateUser} className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="登入帳號 (Username)" required>
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="例如：john_sales"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="預設登入密碼" required>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="至少 12 個字元"
+                  className={inputClassName}
+                />
+              </Field>
             </div>
 
-            {errorMsg && (
-              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700">
-                {errorMsg}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="成員姓名" required>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如：王小明"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="電子信箱 (Email)" required>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@company.com"
+                  className={inputClassName}
+                />
+              </Field>
+            </div>
 
-            <form onSubmit={handleCreateUser} className="mt-4 space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    登入帳號 (Username) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="例如：john_sales"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    預設登入密碼 <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="設定登入密碼"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="角色權限 (Role)">
+                <select value={role} onChange={(e) => setRole(e.target.value)} className={inputClassName}>
+                  {ROLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="負責區域 (Territory)">
+                <select value={region} onChange={(e) => setRegion(e.target.value)} className={inputClassName}>
+                  {REGION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    成員姓名 <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="例如：王小明"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    電子信箱 (Email) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="user@company.com"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="職稱">
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例如：北部業務專員"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="直屬主管 (Reports To)">
+                <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className={inputClassName}>
+                  <option value="">選擇直屬主管 (可選)</option>
+                  {managers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.title})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">角色權限 (Role)</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    <option value="SALES">Sales (負責所屬區域)</option>
-                    <option value="ORDER_ADMIN">訂單管理員 (Sales Assistant)</option>
-                    <option value="SALES_MANAGER">區域主管 (Regional Manager)</option>
-                    <option value="MARKETING_MANAGER">市場部主管 (Marketing Manager)</option>
-                    <option value="GM">總經理 (GM - 全域決策分析)</option>
-                    <option value="ADMIN">系統管理員 (Admin - 系統全管理)</option>
-                    <option value="MARKETING">市場部專員 (Marketing)</option>
-                    <option value="SUPPORT">客服專員 (Customer Support)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">負責區域 (Territory)</label>
-                  <select
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    <option value="NORTH">北部區域 (台北/新竹)</option>
-                    <option value="CENTRAL">中部區域 (台中/彰化)</option>
-                    <option value="SOUTH">南部區域 (高雄/台南)</option>
-                    <option value="OVERSEAS">海外亞太區</option>
-                    <option value="ALL">全區 / 總部 (ALL)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">職稱</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="例如：北部業務專員"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">直屬主管 (Reports To)</label>
-                  <select
-                    value={managerId}
-                    onChange={(e) => setManagerId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    <option value="">選擇直屬主管 (可選)</option>
-                    {managers.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.title})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium rounded-xl text-xs"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-sm"
-                >
-                  {submitting ? "建立中..." : "確認建立帳號"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setShowAddModal(false)}>
+                取消
+              </Button>
+              <Button type="submit" loading={submitting}>
+                {submitting ? "建立中..." : "確認建立帳號"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Edit2 className="w-5 h-5 text-indigo-600" />
-                編輯成員「{editingUser.name}」與調整負責區域
-              </h2>
-              <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-slate-600 p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <Modal title={`編輯成員「${editingUser.name}」與調整負責區域`} onClose={() => setEditingUser(null)} size="lg">
+          {editErrorMsg && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700" role="alert">
+              {editErrorMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleUpdateUser} className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="姓名" required>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="負責區域 (Territory)">
+                <select value={editRegion} onChange={(e) => setEditRegion(e.target.value)} className={inputClassName}>
+                  {REGION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
 
-            <form onSubmit={handleUpdateUser} className="mt-4 space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">姓名</label>
-                  <input
-                    type="text"
-                    required
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">負責區域 (Territory)</label>
-                  <select
-                    value={editRegion}
-                    onChange={(e) => setEditRegion(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white"
-                  >
-                    <option value="NORTH">北部區域 (台北/新竹)</option>
-                    <option value="CENTRAL">中部區域 (台中/彰化)</option>
-                    <option value="SOUTH">南部區域 (高雄/台南)</option>
-                    <option value="OVERSEAS">海外亞太區</option>
-                    <option value="ALL">全區 (ALL)</option>
-                  </select>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="職稱">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="角色權限">
+                <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className={inputClassName}>
+                  {ROLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">職稱</label>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">角色權限</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white"
-                  >
-                    <option value="SALES">Sales</option>
-                    <option value="ORDER_ADMIN">訂單管理員 (Sales Assistant)</option>
-                    <option value="SALES_MANAGER">區域主管 (Regional Manager)</option>
-                    <option value="MARKETING_MANAGER">市場部主管 (Marketing Manager)</option>
-                    <option value="GM">總經理 (GM)</option>
-                    <option value="ADMIN">系統管理員 (Admin)</option>
-                    <option value="MARKETING">市場部專員</option>
-                    <option value="SUPPORT">客服專員</option>
-                  </select>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="部門">
+                <input
+                  type="text"
+                  value={editDepartment}
+                  onChange={(e) => setEditDepartment(e.target.value)}
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="直屬主管">
+                <select value={editManagerId} onChange={(e) => setEditManagerId(e.target.value)} className={inputClassName}>
+                  <option value="">無主管</option>
+                  {managers
+                    .filter((m) => m.id !== editingUser.id)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.title})
+                      </option>
+                    ))}
+                </select>
+              </Field>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">直屬主管</label>
-                  <select
-                    value={editManagerId}
-                    onChange={(e) => setEditManagerId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white"
-                  >
-                    <option value="">無主管</option>
-                    {managers
-                      .filter((m) => m.id !== editingUser.id)
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.title})
-                        </option>
-                      ))}
-                  </select>
-                </div>
+            <Field label="重設密碼 (若不修改請留空)">
+              <input
+                type="password"
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+                placeholder="輸入新密碼（至少 12 個字元）"
+                className={inputClassName}
+              />
+            </Field>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">重設密碼 (若不修改請留空)</label>
-                  <input
-                    type="password"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="輸入新密碼"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-              </div>
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setEditingUser(null)}>
+                取消
+              </Button>
+              <Button type="submit" loading={submitting}>
+                {submitting ? "儲存中..." : "儲存修改"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium rounded-xl text-xs"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-sm"
-                >
-                  {submitting ? "儲存中..." : "儲存修改"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Delete Confirmation */}
+      {deletingUser && (
+        <ConfirmDialog
+          title="刪除成員帳號"
+          message={`確定要刪除成員「${deletingUser.name} (${deletingUser.username})」嗎？帳號將立即停用並撤銷所有登入 Session，歷史商機與稽核紀錄會保留。`}
+          confirmLabel="確認刪除"
+          loading={deleting}
+          onConfirm={handleDeleteUser}
+          onCancel={() => setDeletingUser(null)}
+        />
       )}
     </div>
   );

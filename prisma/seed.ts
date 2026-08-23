@@ -1,8 +1,19 @@
 import { PrismaClient } from "@prisma/client";
+import { hashPassword, validatePassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Destructive demo seed is disabled when NODE_ENV=production");
+  }
+  const demoPassword = process.env.DEMO_SEED_PASSWORD;
+  const passwordError = validatePassword(demoPassword);
+  if (!demoPassword || passwordError) {
+    throw new Error(`DEMO_SEED_PASSWORD is required. ${passwordError || ""}`.trim());
+  }
+  const demoPasswordHash = await hashPassword(demoPassword);
+
   console.log("🌱 Cleaning up database...");
   await prisma.activity.deleteMany({});
   await prisma.ticketMessage.deleteMany({});
@@ -25,7 +36,7 @@ async function main() {
   const adminUser = await prisma.user.create({
     data: {
       username: "admin",
-      password: "Avi22099759",
+      password: demoPasswordHash,
       name: "系統管理員 (Admin)",
       email: "admin@company.com",
       role: "ADMIN",
@@ -39,7 +50,7 @@ async function main() {
   const gmUser = await prisma.user.create({
     data: {
       username: "peter_gm",
-      password: "peter123",
+      password: demoPasswordHash,
       name: "柯博文 (Peter)",
       email: "peter.gm@company.com",
       role: "GM",
@@ -53,7 +64,7 @@ async function main() {
   const salesNorthMgr = await prisma.user.create({
     data: {
       username: "alice_mgr",
-      password: "alice123",
+      password: demoPasswordHash,
       name: "張雅婷 (Alice)",
       email: "alice.sales@company.com",
       role: "SALES_MANAGER",
@@ -68,7 +79,7 @@ async function main() {
   const salesNorthRep = await prisma.user.create({
     data: {
       username: "kevin_sales",
-      password: "kevin123",
+      password: demoPasswordHash,
       name: "林凱文 (Kevin)",
       email: "kevin.sales@company.com",
       role: "SALES",
@@ -79,10 +90,24 @@ async function main() {
     },
   });
 
+  const orderAdmin = await prisma.user.create({
+    data: {
+      username: "oliver_order",
+      password: demoPasswordHash,
+      name: "林歐文 (Oliver)",
+      email: "oliver.order@company.com",
+      role: "ORDER_ADMIN",
+      department: "業務部",
+      region: "NORTH",
+      title: "北部訂單管理員",
+      managerId: salesNorthMgr.id,
+    },
+  });
+
   const salesCentral = await prisma.user.create({
     data: {
       username: "bob_sales",
-      password: "bob123",
+      password: demoPasswordHash,
       name: "李宗翰 (Bob)",
       email: "bob.sales@company.com",
       role: "SALES",
@@ -96,7 +121,7 @@ async function main() {
   const salesSouth = await prisma.user.create({
     data: {
       username: "charlie_sales",
-      password: "charlie123",
+      password: demoPasswordHash,
       name: "趙冠宇 (Charlie)",
       email: "charlie.sales@company.com",
       role: "SALES",
@@ -110,7 +135,7 @@ async function main() {
   const salesOverseas = await prisma.user.create({
     data: {
       username: "sophia_sales",
-      password: "sophia123",
+      password: demoPasswordHash,
       name: "孫佩華 (Sophia)",
       email: "sophia.overseas@company.com",
       role: "SALES",
@@ -121,24 +146,38 @@ async function main() {
     },
   });
 
-  // 5. Marketing & Customer Support
+  // 5. Marketing hierarchy & Customer Support
+  const mktManager = await prisma.user.create({
+    data: {
+      username: "maria_mkt_mgr",
+      password: demoPasswordHash,
+      name: "林美玲 (Maria)",
+      email: "maria.mkt.manager@company.com",
+      role: "MARKETING_MANAGER",
+      department: "行銷部",
+      region: "ALL",
+      title: "市場部主管",
+      managerId: gmUser.id,
+    },
+  });
   const mktCarol = await prisma.user.create({
     data: {
       username: "carol_mkt",
-      password: "carol123",
+      password: demoPasswordHash,
       name: "陳品妤 (Carol)",
       email: "carol.mkt@company.com",
       role: "MARKETING",
       department: "行銷部",
       region: "ALL",
       title: "行銷企劃主管",
+      managerId: mktManager.id,
     },
   });
 
   const supportDavid = await prisma.user.create({
     data: {
       username: "david_support",
-      password: "david123",
+      password: demoPasswordHash,
       name: "王建宏 (David)",
       email: "david.support@company.com",
       role: "SUPPORT",

@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { apiSuccess } from "@/lib/api-response";
+import { authStateResponseSchema } from "@/lib/response-contracts";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ authenticated: false, user: null });
+    return apiSuccess(request, authStateResponseSchema, { authenticated: false, user: null });
   }
-  return NextResponse.json({ authenticated: true, user });
+  return apiSuccess(request, authStateResponseSchema, { authenticated: true, user });
 }

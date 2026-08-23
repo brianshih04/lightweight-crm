@@ -1,215 +1,225 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Sparkles, Lock, User, ShieldCheck, ArrowRight, Shield, Award } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowRight, Lock, Mail, ShieldCheck, Sparkles, User } from "lucide-react";
 
-const DEMO_ACCOUNTS = [
-  {
-    roleLabel: "🛠️ 系統管理員 (System Admin)",
-    name: "系統管理員",
-    username: "admin",
-    password: "Avi22099759",
-    desc: "系統管理者：可建立所有人員帳號、指派各 Sales 負責區域、管理系統配置",
-    color: "border-red-400 bg-red-50/70 hover:bg-red-100/80 text-red-950",
-    badge: "系統最高管理",
-  },
-  {
-    roleLabel: "👑 總經理 (General Manager / CEO)",
-    name: "柯博文 (Peter)",
-    username: "peter_gm",
-    password: "peter123",
-    desc: "全域決策者：可檢視全公司所有區域的營運狀況、商機漏斗與業績排行榜",
-    color: "border-amber-400 bg-amber-50/70 hover:bg-amber-100/80 text-amber-950",
-    badge: "全區業務總覽",
-  },
-  {
-    roleLabel: "🏢 北部業務主管 (Sales Manager)",
-    name: "張雅婷 (Alice)",
-    username: "alice_mgr",
-    password: "alice123",
-    desc: "管轄北部區域全體業務，可檢視下屬 Sales 業績與商機",
-    color: "border-indigo-400 bg-indigo-50/70 hover:bg-indigo-100/80 text-indigo-950",
-    badge: "北部全區 + 下屬",
-  },
-  {
-    roleLabel: "💼 北部業務代表 (Sales Rep)",
-    name: "林凱文 (Kevin)",
-    username: "kevin_sales",
-    password: "kevin123",
-    desc: "僅能檢視北部個人負責之商機、線索與客戶",
-    color: "border-blue-300 bg-blue-50/60 hover:bg-blue-100/80 text-blue-950",
-    badge: "北部個人責任區",
-  },
-  {
-    roleLabel: "💼 中部業務代表 (Sales Rep)",
-    name: "李宗翰 (Bob)",
-    username: "bob_sales",
-    password: "bob123",
-    desc: "僅能檢視中部地區負責之商機與客戶",
-    color: "border-emerald-300 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-950",
-    badge: "中部個人責任區",
-  },
-  {
-    roleLabel: "💼 南部業務代表 (Sales Rep)",
-    name: "趙冠宇 (Charlie)",
-    username: "charlie_sales",
-    password: "charlie123",
-    desc: "僅能檢視南部地區負責之商機與客戶",
-    color: "border-purple-300 bg-purple-50/60 hover:bg-purple-100/80 text-purple-950",
-    badge: "南部個人責任區",
-  },
-];
+type PageMode = "checking" | "setup" | "login";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const [mode, setMode] = useState<PageMode>("checking");
   const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleLogin = async (e?: React.FormEvent, customUser?: string, customPass?: string) => {
-    if (e) e.preventDefault();
+  useEffect(() => {
+    fetch("/api/auth/setup", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Setup status request failed");
+        return response.json() as Promise<{ needsSetup: boolean }>;
+      })
+      .then((data) => setMode(data.needsSetup ? "setup" : "login"))
+      .catch(() => {
+        setError("無法確認系統初始化狀態，請稍後再試");
+        setMode("login");
+      });
+  }, []);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError("");
+
+    if (mode === "setup" && password !== passwordConfirm) {
+      setError("兩次輸入的密碼不一致");
+      return;
+    }
+
     setLoading(true);
-
-    const loginUser = customUser || username;
-    const loginPass = customPass || password;
-
     try {
-      const res = await fetch("/api/auth/login", {
+      const response = await fetch(mode === "setup" ? "/api/auth/setup" : "/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUser, password: loginPass }),
+        body: JSON.stringify(
+          mode === "setup"
+            ? { username, name, email, password, passwordConfirm }
+            : { username, password }
+        ),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "登入失敗，請檢查帳號密碼");
-        setLoading(false);
+      const data = await response.json();
+      if (!response.ok) {
+        if (data.code === "INITIAL_SETUP_REQUIRED") setMode("setup");
+        setError(data.error || (mode === "setup" ? "初始化失敗" : "登入失敗，請檢查帳號密碼"));
         return;
       }
-
-      // Success redirect
       window.location.href = "/";
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError("網路連線錯誤");
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickLogin = (acc: typeof DEMO_ACCOUNTS[0]) => {
-    setUsername(acc.username);
-    setPassword(acc.password);
-    handleLogin(undefined, acc.username, acc.password);
-  };
+  if (mode === "checking") {
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center text-sm font-semibold text-slate-500">
+        正在確認系統狀態…
+      </div>
+    );
+  }
+
+  const isSetup = mode === "setup";
 
   return (
-    <div className="min-h-[85vh] flex flex-col justify-center items-center py-6 px-4">
-      <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-        {/* Left Form */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6">
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">登入 NexCRM 系統</h1>
-            <p className="text-xs text-slate-500">
-              請輸入您的專屬帳號密碼以存取對應權限與區域資料。
-            </p>
+    <div className="min-h-[85vh] flex items-center justify-center py-6 px-4">
+      <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6">
+        <div className="space-y-2">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-md ${isSetup ? "bg-rose-600 shadow-rose-500/20" : "bg-indigo-600 shadow-indigo-500/20"}`}>
+            {isSetup ? <ShieldCheck className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
           </div>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+            {isSetup ? "建立第一位系統管理員" : "登入 NexCRM 系統"}
+          </h1>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {isSetup
+              ? "目前尚無任何使用者。第一位完成設定的人將成為 ADMIN；密碼必須由本人設定，系統不提供預設密碼。"
+              : "請輸入您的專屬帳號密碼以存取已授權的資料。"}
+          </p>
+        </div>
 
-          {error && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
+            {error}
+          </div>
+        )}
 
-          <form onSubmit={handleLogin} className="space-y-4 text-sm">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">使用者帳號 (Username)</label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+          {isSetup && (
+            <>
+              <Field label="姓名" icon={<User className="w-4 h-4" />}>
                 <input
                   type="text"
                   required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="例如：admin, peter_gm, alice_mgr"
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  maxLength={100}
+                  autoComplete="name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  className="field-input"
                 />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">密碼 (Password)</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              </Field>
+              <Field label="Email" icon={<Mail className="w-4 h-4" />}>
                 <input
-                  type="password"
+                  type="email"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  maxLength={254}
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="field-input"
                 />
-              </div>
-            </div>
+              </Field>
+            </>
+          )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition text-sm flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <span>驗證登入中...</span>
-              ) : (
-                <>
-                  <span>立即登入系統</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-        </div>
+          <Field label="使用者帳號" icon={<User className="w-4 h-4" />}>
+            <input
+              type="text"
+              required
+              minLength={3}
+              maxLength={50}
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder={isSetup ? "例如：admin" : "輸入帳號或 Email"}
+              className="field-input"
+            />
+          </Field>
 
-        {/* Right: Quick Role Test Panel */}
-        <div className="lg:col-span-7 space-y-4">
-          <div>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-800 uppercase tracking-wider">
-              快速體驗 / 權限切換
-            </span>
-            <h2 className="text-lg font-bold text-slate-900 mt-1">一鍵以不同身分快速登入</h2>
-            <p className="text-xs text-slate-500">
-              點擊下方卡片即可立即體驗「系統管理者」、「總經理全區視圖」、「業務主管區域管理」或「個別業務專屬視角」之嚴格資料隔離效果：
-            </p>
-          </div>
+          <Field label="密碼" hint={isSetup ? "至少 12 個字元" : undefined} icon={<Lock className="w-4 h-4" />}>
+            <input
+              type="password"
+              required
+              minLength={isSetup ? 12 : undefined}
+              maxLength={128}
+              autoComplete={isSetup ? "new-password" : "current-password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="field-input"
+            />
+          </Field>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {DEMO_ACCOUNTS.map((acc, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleQuickLogin(acc)}
-                className={`w-full text-left p-3.5 rounded-2xl border ${acc.color} transition shadow-sm hover:shadow-md cursor-pointer block space-y-1`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold truncate">{acc.roleLabel}</span>
-                  <span className="text-[9px] bg-white px-2 py-0.5 rounded-full border border-black/10 font-bold shrink-0">
-                    {acc.badge}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs pt-0.5">
-                  <span className="font-semibold text-slate-900">{acc.name} ({acc.username})</span>
-                  <span className="text-[10px] text-slate-500 font-mono">密碼: {acc.password}</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-snug">{acc.desc}</p>
-              </button>
-            ))}
-          </div>
-        </div>
+          {isSetup && (
+            <Field label="確認密碼" icon={<Lock className="w-4 h-4" />}>
+              <input
+                type="password"
+                required
+                minLength={12}
+                maxLength={128}
+                autoComplete="new-password"
+                value={passwordConfirm}
+                onChange={(event) => setPasswordConfirm(event.target.value)}
+                className="field-input"
+              />
+            </Field>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-3 text-white font-bold rounded-xl shadow-lg transition text-sm flex items-center justify-center gap-2 disabled:opacity-60 ${isSetup ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/30" : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30"}`}
+          >
+            <span>{loading ? (isSetup ? "建立管理員中…" : "驗證登入中…") : (isSetup ? "建立 ADMIN 並登入" : "立即登入系統")}</span>
+            {!loading && <ArrowRight className="w-4 h-4" />}
+          </button>
+        </form>
+
+        {isSetup && (
+          <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3 leading-relaxed">
+            此入口只在使用者數量為零時開放。建立成功後不可再次透過此頁取得 ADMIN 權限。
+          </p>
+        )}
       </div>
+      <style jsx>{`
+        :global(.field-input) {
+          width: 100%;
+          border-radius: 0.75rem;
+          border: 1px solid rgb(226 232 240);
+          padding: 0.625rem 1rem 0.625rem 2.25rem;
+          font-size: 0.75rem;
+          outline: none;
+        }
+        :global(.field-input:focus) {
+          border-color: rgb(99 102 241);
+          box-shadow: 0 0 0 3px rgb(99 102 241 / 0.12);
+        }
+      `}</style>
     </div>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  icon,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1">
+        <span>{label}</span>
+        {hint && <span className="font-medium text-slate-400">{hint}</span>}
+      </span>
+      <span className="relative block">
+        <span className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">{icon}</span>
+        {children}
+      </span>
+    </label>
   );
 }

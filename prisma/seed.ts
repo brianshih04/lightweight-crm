@@ -34,6 +34,7 @@ const ORG_STRUCTURE = {
     { username: "linda", name: "Linda", title: "訂單管理員（支援各行銷部）" },
     { username: "brenda", name: "Brenda", title: "訂單管理員（支援各行銷部）" },
   ],
+  supportManager: { username: "kidd", name: "Kidd", department: "客戶服務部", title: "客服部主管" },
 } as const;
 
 async function main() {
@@ -154,6 +155,20 @@ async function main() {
       },
     });
   }
+
+  await prisma.user.create({
+    data: {
+      username: ORG_STRUCTURE.supportManager.username,
+      password: passwordHash,
+      name: ORG_STRUCTURE.supportManager.name,
+      email: "kidd@company.com",
+      role: "SUPPORT",
+      department: ORG_STRUCTURE.supportManager.department,
+      region: "ALL",
+      title: ORG_STRUCTURE.supportManager.title,
+      managerId: gm.id,
+    },
+  });
 
   console.log("🌱 Seeding default sales pipeline & stages...");
   const pipeline = await prisma.pipeline.create({

@@ -206,6 +206,8 @@ export function canManageUserRole(managerRole: string, subordinateRole: string):
   // 訂單管理員是支援單位，組織上可掛在市場部主管之下（僅影響主管欄位驗證，
   // 使用者管理 API 仍限 ADMIN/GM 呼叫）。
   if (managerRole === "MARKETING_MANAGER") return ["MARKETING", "ORDER_ADMIN"].includes(subordinateRole);
+  // 客服部主管（SUPPORT）可帶領其他客服人員。
+  if (managerRole === "SUPPORT") return subordinateRole === "SUPPORT";
   return false;
 }
 

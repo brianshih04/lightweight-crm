@@ -128,7 +128,10 @@
   Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep -Seconds 1
   npx prisma db push
-  npm run db:seed
+  # seed 為選擇性步驟：需先依第 6 節設定 DEMO_SEED_PASSWORD 與 DEMO_SEED_CONFIRM=1 才會執行
+  # $env:DEMO_SEED_PASSWORD = Read-Host "Demo password" -MaskInput
+  # $env:DEMO_SEED_CONFIRM = "1"
+  # npm run db:seed
   ```
 
 ### ⚠️ Gotcha 2: 背景常駐服務 (Daemons)

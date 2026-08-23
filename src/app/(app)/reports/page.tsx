@@ -1,64 +1,54 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  FileText,
-  TrendingUp,
-  DollarSign,
   Award,
   Globe2,
-  Users,
-  Building2,
-  Headset,
   Target,
   Sparkles,
   Printer,
-  ChevronRight,
-  ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  BarChart3,
+  TrendingUp,
 } from "lucide-react";
 import { formatCurrency, REGIONS } from "@/lib/utils";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+import { Button, EmptyState, ErrorBanner, PageLoader } from "@/components/ui";
+import { RegionalPerformanceChart } from "@/components/charts/RegionalPerformanceChart";
 
 export default function ExecutiveReportsPage() {
   const [data, setData] = useState<any>(null);
   const [selectedRegion, setSelectedRegion] = useState("ALL");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const fetchReport = () => {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
-    fetch(`/api/reports/executive?region=${selectedRegion}`)
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
+    setLoadError("");
+    try {
+      const json = await apiFetch<any>(`/api/reports/executive?region=${selectedRegion}`);
+      setData(json);
+    } catch (err) {
+      console.error(err);
+      setLoadError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedRegion]);
 
   useEffect(() => {
     fetchReport();
-  }, [selectedRegion]);
+  }, [fetchReport]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-3 text-slate-500 text-sm">
-          <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-          生成總經理決策分析報表中...
-        </div>
-      </div>
-    );
+    return <PageLoader label="生成總經理決策分析報表中..." />;
   }
 
   const kpis = data?.kpis || {};
   const regionalBreakdown = data?.regionalBreakdown || [];
   const salesLeaderboard = data?.salesLeaderboard || [];
   const executiveTakeaways = data?.executiveTakeaways || [];
+  const topWon = salesLeaderboard.length > 0 ? Math.max(...salesLeaderboard.map((u: any) => u.wonAmount), 1) : 1;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -69,32 +59,29 @@ export default function ExecutiveReportsPage() {
             <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-indigo-600 text-white flex items-center gap-1">
               <Award className="w-3.5 h-3.5" /> 總經理決策專區
             </span>
-            <span className="text-xs text-slate-400">2026 Q3 季度營運分析</span>
+            <span className="text-xs text-slate-400">季度營運分析</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">
-            全公司營運決策與分區業績報表
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">全公司營運決策與分區業績報表</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             整合跨區域銷售管線、業務團隊績效貢獻與售後支援指標之宏觀分析。
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg shadow-sm transition"
-          >
+          <Button variant="secondary" onClick={() => window.print()}>
             <Printer className="w-4 h-4 text-slate-500" />
             <span>列印 / 匯出報表</span>
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Regional Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1" role="group" aria-label="區域篩選">
         {Object.entries(REGIONS).map(([key, reg]) => (
           <button
             key={key}
+            type="button"
+            aria-pressed={selectedRegion === key}
             onClick={() => setSelectedRegion(key)}
             className={`px-4 py-2 text-xs font-semibold rounded-xl transition shrink-0 flex items-center gap-2 ${
               selectedRegion === key
@@ -108,20 +95,18 @@ export default function ExecutiveReportsPage() {
         ))}
       </div>
 
+      {loadError && <ErrorBanner message={loadError} onRetry={fetchReport} />}
+
       {/* Top Level Target & Revenue Progress (GM High-level Goal) */}
       <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden">
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <span className="text-xs font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Target className="w-4 h-4 text-indigo-400" /> 2026 Q3 總營收目標達成進度
+              <Target className="w-4 h-4 text-indigo-400" /> 季度總營收目標達成進度
             </span>
             <div className="flex items-baseline gap-3">
-              <span className="text-3xl md:text-4xl font-extrabold text-white">
-                {formatCurrency(kpis.totalWonValue)}
-              </span>
-              <span className="text-indigo-200 text-sm">
-                / 目標 {formatCurrency(kpis.totalTarget)}
-              </span>
+              <span className="text-3xl md:text-4xl font-extrabold text-white">{formatCurrency(kpis.totalWonValue)}</span>
+              <span className="text-indigo-200 text-sm">/ 目標 {formatCurrency(kpis.totalTarget)}</span>
             </div>
 
             {/* Target Progress Bar */}
@@ -148,7 +133,7 @@ export default function ExecutiveReportsPage() {
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col justify-between">
             <span className="text-xs text-indigo-200 font-medium">全公司綜合勝率 (Win Rate)</span>
             <p className="text-2xl font-bold text-emerald-400 mt-2">{kpis.winRate}%</p>
-            <p className="text-[11px] text-indigo-300 mt-1">高於業界 B2B 平均水準</p>
+            <p className="text-[11px] text-indigo-300 mt-1">以贏單商機數計算</p>
           </div>
         </div>
       </div>
@@ -161,55 +146,61 @@ export default function ExecutiveReportsPage() {
               <Globe2 className="w-5 h-5 text-indigo-600" />
               分區域營運績效矩陣 (Regional Territory Matrix)
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">北部、中部、南部與海外各區域的商機規模與服務指標對比</p>
+            <p className="text-xs text-slate-500 mt-0.5">各區域的商機規模與服務指標對比</p>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-3.5">區域</th>
-                <th className="px-6 py-3.5">已贏單成交額</th>
-                <th className="px-6 py-3.5">進行中商機總額</th>
-                <th className="px-6 py-3.5">商機總數</th>
-                <th className="px-6 py-3.5">企業客戶數</th>
-                <th className="px-6 py-3.5 text-right">待處理工單</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {regionalBreakdown.map((reg: any) => (
-                <tr key={reg.region} className="hover:bg-slate-50/70 transition">
-                  <td className="px-6 py-4 font-bold text-slate-900 flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: REGIONS[reg.region]?.dot }} />
-                    {reg.name}
-                  </td>
-                  <td className="px-6 py-4 font-bold text-emerald-600">
-                    {formatCurrency(reg.wonValue)}
-                  </td>
-                  <td className="px-6 py-4 font-semibold text-indigo-600">
-                    {formatCurrency(reg.pipelineValue)}
-                  </td>
-                  <td className="px-6 py-4 text-slate-700 font-medium">
-                    {reg.dealsCount} 筆
-                  </td>
-                  <td className="px-6 py-4 text-slate-700">
-                    {reg.accountsCount} 家
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <span
-                      className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-                        reg.openTicketsCount > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                      }`}
-                    >
-                      {reg.openTicketsCount} 件
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {regionalBreakdown.length === 0 ? (
+          <EmptyState icon={Globe2} title="此地區尚無營運數據" description="切換上方區域檢視其他地區，或建立商機後再回來查看。" />
+        ) : (
+          <>
+            <RegionalPerformanceChart
+              regions={regionalBreakdown.map((reg: any) => ({
+                name: reg.name,
+                wonValue: reg.wonValue,
+                pipelineValue: reg.pipelineValue,
+              }))}
+            />
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-3.5">區域</th>
+                    <th className="px-6 py-3.5">已贏單成交額</th>
+                    <th className="px-6 py-3.5">進行中商機總額</th>
+                    <th className="px-6 py-3.5">商機總數</th>
+                    <th className="px-6 py-3.5">企業客戶數</th>
+                    <th className="px-6 py-3.5 text-right">待處理工單</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {regionalBreakdown.map((reg: any) => (
+                    <tr key={reg.region} className="hover:bg-slate-50/70 transition">
+                      <td className="px-6 py-4 font-bold text-slate-900 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: REGIONS[reg.region]?.dot }} />
+                        {reg.name}
+                      </td>
+                      <td className="px-6 py-4 font-bold text-emerald-600">{formatCurrency(reg.wonValue)}</td>
+                      <td className="px-6 py-4 font-semibold text-indigo-600">{formatCurrency(reg.pipelineValue)}</td>
+                      <td className="px-6 py-4 text-slate-700 font-medium">{reg.dealsCount} 筆</td>
+                      <td className="px-6 py-4 text-slate-700">{reg.accountsCount} 家</td>
+                      <td className="px-6 py-4 text-right">
+                        <span
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                            reg.openTicketsCount > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {reg.openTicketsCount} 件
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Grid: Sales Leaderboard + GM Insights */}
@@ -224,49 +215,63 @@ export default function ExecutiveReportsPage() {
             <span className="text-xs text-slate-400">依贏單金額排序</span>
           </div>
 
-          <div className="space-y-3">
-            {salesLeaderboard.map((user: any, index: number) => {
-              const regConfig = REGIONS[user.region] || { label: user.region, badge: "bg-slate-100" };
-              return (
-                <div
-                  key={user.id}
-                  className="p-4 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${
-                        index === 0
-                          ? "bg-amber-100 text-amber-800 ring-2 ring-amber-300"
-                          : index === 1
-                          ? "bg-slate-200 text-slate-700"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      {index + 1}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">{user.name}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded border ${regConfig.badge}`}>
-                          {regConfig.label.split(" ")[0]}
+          {salesLeaderboard.length === 0 ? (
+            <EmptyState icon={Award} title="尚無業務績效資料" description="商機贏單結案後，團隊績效會自動統計到排行榜。" />
+          ) : (
+            <div className="space-y-3">
+              {salesLeaderboard.map((user: any, index: number) => {
+                const regConfig = REGIONS[user.region] || { label: user.region, badge: "bg-slate-100" };
+                const relativeWidth = Math.round((user.wonAmount / topWon) * 100);
+                return (
+                  <div
+                    key={user.id}
+                    className="p-4 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/50 transition"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-xs shrink-0 ${
+                            index === 0
+                              ? "bg-amber-100 text-amber-800 ring-2 ring-amber-300"
+                              : index === 1
+                                ? "bg-slate-200 text-slate-700"
+                                : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm truncate">{user.name}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded border ${regConfig.badge}`}>
+                              {regConfig.label.split(" ")[0]}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5 truncate">{user.title}</p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-sm font-extrabold text-emerald-600 block">{formatCurrency(user.wonAmount)}</span>
+                        <span className="text-[11px] text-slate-400">
+                          進行中：{formatCurrency(user.pipelineAmount)} ({user.openCount} 筆)
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">{user.title}</p>
+                    </div>
+
+                    {/* 相對第一名業績的進度條 */}
+                    <div className="mt-2.5 h-1.5 bg-slate-200/70 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+                        style={{ width: `${Math.max(relativeWidth, 2)}%` }}
+                        title={`佔第一名業績的 ${relativeWidth}%`}
+                      />
                     </div>
                   </div>
-
-                  <div className="text-right">
-                    <span className="text-sm font-extrabold text-emerald-600 block">
-                      {formatCurrency(user.wonAmount)}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      進行中：{formatCurrency(user.pipelineAmount)} ({user.openCount} 筆)
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Executive AI & GM Decision Insights */}
@@ -276,26 +281,27 @@ export default function ExecutiveReportsPage() {
             <h2 className="text-base font-bold text-slate-900">總經理營運決策洞察 (Executive Insights)</h2>
           </div>
 
-          <div className="space-y-3">
-            {executiveTakeaways.map((item: any, i: number) => (
-              <div
-                key={i}
-                className="p-4 rounded-xl border border-slate-100 bg-slate-50/70 space-y-1.5"
-              >
-                <div className="flex items-center gap-2">
-                  {item.type === "HIGHLIGHT" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : item.type === "OPPORTUNITY" ? (
-                    <TrendingUp className="w-4 h-4 text-indigo-600 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  )}
-                  <h4 className="font-bold text-slate-900 text-xs">{item.title}</h4>
+          {executiveTakeaways.length === 0 ? (
+            <EmptyState icon={Sparkles} title="尚無決策洞察" description="累積足夠的商機與工單資料後，系統會自動生成營運洞察。" />
+          ) : (
+            <div className="space-y-3">
+              {executiveTakeaways.map((item: any, i: number) => (
+                <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50/70 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    {item.type === "HIGHLIGHT" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : item.type === "OPPORTUNITY" ? (
+                      <TrendingUp className="w-4 h-4 text-indigo-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    )}
+                    <h4 className="font-bold text-slate-900 text-xs">{item.title}</h4>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed pl-6">{item.content}</p>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed pl-6">{item.content}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,29 +1,47 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin } from "@/lib/auth";
+import { getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, publicUserSelect } from "@/lib/auth";
+import { hasPermission, requirePermission } from "@/lib/authorization";
+import { apiErrorFromUnknown, apiSuccess, parseQuery } from "@/lib/api-response";
+import { regionFilterQuerySchema } from "@/lib/contracts";
+import { dashboardResponseSchema } from "@/lib/response-contracts";
+import { moneyToNumber } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await getCurrentUser();
-    const { searchParams } = new URL(request.url);
-    const queryRegion = searchParams.get("region");
+    const authorization = await requirePermission("dashboard", "read", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
+    const query = parseQuery(request, regionFilterQuerySchema);
+    if (!query.ok) return query.response;
+    const queryRegion = query.data.region;
 
     const dealWhere = getDealScopeFilter(user, queryRegion);
     const entityWhere = getEntityScopeFilter(user, queryRegion);
+    const activityWhere = isGMOrAdmin(user) || user.region === "ALL"
+      ? {}
+      : {
+          OR: [
+            { contact: { region: user.region } },
+            { account: { region: user.region } },
+            { ticket: { region: user.region } },
+            ...(user.role === "SALES"
+              ? [{ deal: { region: user.region, assignedToId: user.id } }, { userId: user.id }]
+              : [{ deal: { region: user.region } }]),
+          ],
+        };
 
     // 1. Core KPIs filtered by user's permission scope
-    const [totalContacts, totalAccounts, deals, openTickets, sentCampaigns, activities] =
+    const [totalContacts, totalAccounts, dealStatusStats, openTickets, sentCampaigns, activities] =
       await Promise.all([
         prisma.contact.count({ where: entityWhere }),
         prisma.account.count({ where: entityWhere }),
-        prisma.deal.findMany({
+        prisma.deal.groupBy({
+          by: ["status"],
           where: dealWhere,
-          include: {
-            stage: true,
-            assignedTo: true,
-          },
+          _count: { _all: true },
+          _sum: { value: true },
         }),
         prisma.ticket.findMany({
           where: {
@@ -37,15 +55,15 @@ export async function GET(request: Request) {
           orderBy: { createdAt: "desc" },
           take: 5,
         }),
-        prisma.campaign.findMany({
-          orderBy: { createdAt: "desc" },
-          take: 3,
-        }),
+        hasPermission(user, "campaigns", "read")
+          ? prisma.campaign.findMany({ orderBy: { createdAt: "desc" }, take: 3 })
+          : Promise.resolve([]),
         prisma.activity.findMany({
+          where: activityWhere,
           include: {
             contact: true,
             deal: true,
-            user: true,
+            user: { select: publicUserSelect },
           },
           orderBy: { createdAt: "desc" },
           take: 6,
@@ -53,39 +71,39 @@ export async function GET(request: Request) {
       ]);
 
     // Calculate revenue metrics
-    const totalPipelineValue = deals
-      .filter((d) => d.status === "OPEN")
-      .reduce((sum, d) => sum + d.value, 0);
-
-    const wonValue = deals
-      .filter((d) => d.status === "WON")
-      .reduce((sum, d) => sum + d.value, 0);
-
-    const openDealsCount = deals.filter((d) => d.status === "OPEN").length;
-    const wonDealsCount = deals.filter((d) => d.status === "WON").length;
+    const openStats = dealStatusStats.find((entry) => entry.status === "OPEN");
+    const wonStats = dealStatusStats.find((entry) => entry.status === "WON");
+    const lostStats = dealStatusStats.find((entry) => entry.status === "LOST");
+    const totalPipelineValue = moneyToNumber(openStats?._sum.value);
+    const wonValue = moneyToNumber(wonStats?._sum.value);
+    const openDealsCount = openStats?._count._all || 0;
+    const wonDealsCount = wonStats?._count._all || 0;
+    const lostDealsCount = lostStats?._count._all || 0;
     const winRate =
-      deals.length > 0
-        ? Math.round((wonDealsCount / (wonDealsCount + deals.filter((d) => d.status === "LOST").length || 1)) * 100)
+      wonDealsCount + lostDealsCount > 0
+        ? Math.round((wonDealsCount / (wonDealsCount + lostDealsCount)) * 100)
         : 0;
 
     // Pipeline breakdown by stage
-    const stages = await prisma.stage.findMany({
-      orderBy: { order: "asc" },
-      include: {
-        deals: {
-          where: dealWhere,
-        },
-      },
-    });
+    const [stages, stageStats] = await Promise.all([
+      prisma.stage.findMany({ orderBy: { order: "asc" } }),
+      prisma.deal.groupBy({
+        by: ["stageId"],
+        where: dealWhere,
+        _count: { _all: true },
+        _sum: { value: true },
+      }),
+    ]);
+    const statsByStage = new Map(stageStats.map((entry) => [entry.stageId, entry]));
 
     const pipelineStages = stages.map((st) => ({
       name: st.name,
       color: st.color,
-      count: st.deals.length,
-      totalValue: st.deals.reduce((sum, d) => sum + d.value, 0),
+      count: statsByStage.get(st.id)?._count._all || 0,
+      totalValue: moneyToNumber(statsByStage.get(st.id)?._sum.value),
     }));
 
-    return NextResponse.json({
+    return apiSuccess(request, dashboardResponseSchema, {
       currentUser: user,
       isGMOrAdmin: isGMOrAdmin(user),
       kpis: {
@@ -104,6 +122,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Dashboard API Error:", error);
-    return NextResponse.json({ error: "Failed to fetch dashboard metrics" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "DASHBOARD_READ_FAILED", "無法取得儀表板資料");
   }
 }

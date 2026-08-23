@@ -1,15 +1,22 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, getEntityScopeFilter } from "@/lib/auth";
+import { getDealScopeFilter, getEntityScopeFilter } from "@/lib/auth";
+import { requirePermission } from "@/lib/authorization";
+import { recordAuditEvent } from "@/lib/audit";
+import { apiError, apiErrorFromUnknown, paginatedArrayResponse, parseJsonBody, parseQuery } from "@/lib/api-response";
+import { contactCreateSchema, contactListQuerySchema } from "@/lib/contracts";
+import { contactListItemResponseSchema, contactWithAccountResponseSchema } from "@/lib/response-contracts";
+import { executeIdempotentMutation, replayIdempotentMutation } from "@/lib/idempotency";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await getCurrentUser();
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search") || "";
-    const queryRegion = searchParams.get("region");
+    const authorization = await requirePermission("contacts", "read", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
+    const query = parseQuery(request, contactListQuerySchema);
+    if (!query.ok) return query.response;
+    const { search, region: queryRegion, cursor, limit } = query.data;
 
     const entityWhere = getEntityScopeFilter(user, queryRegion);
 
@@ -30,58 +37,92 @@ export async function GET(request: Request) {
       },
       include: {
         account: true,
-        deals: true,
-        tickets: true,
+        _count: {
+          select: {
+            deals: { where: getDealScopeFilter(user, queryRegion) },
+            tickets: true,
+          },
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+    const contactItems = contacts.map(({ _count, ...contact }) => ({
+      ...contact,
+      dealCount: _count.deals,
+      ticketCount: _count.tickets,
+    }));
 
-    return NextResponse.json(contacts);
+    return paginatedArrayResponse(request, contactItems, limit, contactListItemResponseSchema);
   } catch (error) {
     console.error("Contacts GET Error:", error);
-    return NextResponse.json({ error: "Failed to fetch contacts" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "CONTACTS_READ_FAILED", "無法取得聯絡人資料");
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const user = await getCurrentUser();
-    const body = await request.json();
-    const { name, email, phone, title, accountId, region, tags, customFields } = body;
+    const authorization = await requirePermission("contacts", "create", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
+    const parsed = await parseJsonBody(request, contactCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const replay = await replayIdempotentMutation(request, user.id, parsed.data);
+    if (replay) return replay;
+    const { name, email, phone, title, accountId, region, tags, customFields } = parsed.data;
 
-    if (!name) {
-      return NextResponse.json({ error: "聯絡人姓名為必填" }, { status: 400 });
+    if (accountId) {
+      const account = await prisma.account.findFirst({
+        where: { id: accountId, ...getEntityScopeFilter(user) },
+        select: { id: true },
+      });
+      if (!account) {
+        return apiError(request, 400, "INVALID_ACCOUNT_SCOPE", "指定的企業客戶不存在或不在可存取範圍");
+      }
     }
 
-    const contact = await prisma.contact.create({
-      data: {
-        name,
-        email,
-        phone,
-        title,
-        region: region || user?.region || "NORTH",
-        accountId: accountId || null,
-        tags: tags || null,
-        customFields: customFields ? JSON.stringify(customFields) : null,
-      },
-      include: {
-        account: true,
+    return executeIdempotentMutation({
+      request,
+      actorId: user.id,
+      payload: parsed.data,
+      responseSchema: contactWithAccountResponseSchema,
+      operation: async (tx) => {
+        const createdContact = await tx.contact.create({
+          data: {
+            name,
+            email: email || null,
+            phone,
+            title,
+            region: user.region === "ALL" ? (region || "NORTH") : user.region,
+            accountId: accountId || null,
+            tags: tags || null,
+            customFields: customFields ? JSON.stringify(customFields) : null,
+          },
+          include: { account: true },
+        });
+        await tx.activity.create({
+          data: {
+            type: "SYSTEM",
+            title: `建立了新聯絡人 ${name}`,
+            contactId: createdContact.id,
+            accountId: createdContact.accountId,
+            userId: user.id,
+          },
+        });
+        await recordAuditEvent({
+          request,
+          actor: user,
+          action: "create",
+          resource: "contacts",
+          resourceId: createdContact.id,
+          result: "SUCCESS",
+        }, tx);
+        return createdContact;
       },
     });
-
-    await prisma.activity.create({
-      data: {
-        type: "SYSTEM",
-        title: `建立了新聯絡人 ${name}`,
-        contactId: contact.id,
-        accountId: contact.accountId,
-        userId: user?.id,
-      },
-    });
-
-    return NextResponse.json(contact, { status: 201 });
   } catch (error) {
     console.error("Contacts POST Error:", error);
-    return NextResponse.json({ error: "Failed to create contact" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "CONTACT_CREATE_FAILED", "無法建立聯絡人");
   }
 }

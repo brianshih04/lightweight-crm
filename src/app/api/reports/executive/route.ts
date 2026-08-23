@@ -1,81 +1,115 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, isGMOrAdmin, isSalesManager } from "@/lib/auth";
+import { asDataRegion, isGMOrAdmin, isSalesManager } from "@/lib/auth";
+import { requirePermission } from "@/lib/authorization";
+import { apiErrorFromUnknown, apiSuccess, parseQuery } from "@/lib/api-response";
+import { regionFilterQuerySchema } from "@/lib/contracts";
+import { executiveReportResponseSchema } from "@/lib/response-contracts";
+import { moneyToNumber } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await getCurrentUser();
+    const authorization = await requirePermission("reports", "read", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
 
-    // 1. Role Authorization Check: Only GM, Admin, or Sales Manager can access
-    if (!isGMOrAdmin(user) && !isSalesManager(user)) {
-      return NextResponse.json(
-        { error: "權限不足：僅總經理 (GM)、業務處主管與系統管理員可檢視高階決策分析報表" },
-        { status: 403 }
-      );
-    }
-
-    const { searchParams } = new URL(request.url);
-    let selectedRegion = searchParams.get("region") || "ALL";
+    const query = parseQuery(request, regionFilterQuerySchema);
+    if (!query.ok) return query.response;
+    let selectedRegion = query.data.region || "ALL";
 
     // If Sales Manager, force region to their own region
     if (isSalesManager(user)) {
-      selectedRegion = user?.region || "NORTH";
+      selectedRegion = (["NORTH", "CENTRAL", "SOUTH", "OVERSEAS"] as const).find(
+        (region) => region === user.region
+      ) || "NORTH";
     }
 
-    // 2. Fetch scoped data
-    const [deals, users, accounts, tickets, leads] = await Promise.all([
-      prisma.deal.findMany({
-        where: selectedRegion !== "ALL" ? { region: selectedRegion } : undefined,
-        include: {
-          assignedTo: true,
-          account: true,
-          stage: true,
-        },
+    const selectedDataRegion = asDataRegion(selectedRegion);
+    const selectedWhere = selectedDataRegion ? { region: selectedDataRegion } : undefined;
+    const regionalWhere = isSalesManager(user) && selectedDataRegion
+      ? { region: selectedDataRegion }
+      : undefined;
+
+    // 2. Fetch only the rows needed for leaderboard rendering; aggregate KPIs in the database.
+    const [
+      dealStatusStats,
+      users,
+      userDealStats,
+      totalAccountsCount,
+      totalTicketsCount,
+      totalLeadsCount,
+      regionalDealStats,
+      regionalTicketStats,
+      regionalAccountStats,
+    ] = await Promise.all([
+      prisma.deal.groupBy({
+        by: ["status"],
+        where: selectedWhere,
+        _count: { _all: true },
+        _sum: { value: true },
       }),
       prisma.user.findMany({
         where: {
+          isActive: true,
           department: "業務部",
-          ...(isSalesManager(user) && user ? { region: user.region } : {}),
+          ...(selectedRegion !== "ALL" ? { region: selectedRegion } : {}),
         },
-        include: {
-          assignedDeals: {
-            include: { stage: true },
-          },
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          region: true,
         },
       }),
-      prisma.account.findMany({
-        where: selectedRegion !== "ALL" ? { region: selectedRegion } : undefined,
+      prisma.deal.groupBy({
+        by: ["assignedToId", "status"],
+        where: {
+          assignedToId: { not: null },
+          ...(selectedDataRegion ? { region: selectedDataRegion } : {}),
+        },
+        _count: { _all: true },
+        _sum: { value: true },
       }),
-      prisma.ticket.findMany({
-        where: selectedRegion !== "ALL" ? { region: selectedRegion } : undefined,
+      prisma.account.count({ where: selectedWhere }),
+      prisma.ticket.count({ where: selectedWhere }),
+      prisma.lead.count({ where: selectedWhere }),
+      prisma.deal.groupBy({
+        by: ["region", "status"],
+        where: regionalWhere,
+        _count: { _all: true },
+        _sum: { value: true },
       }),
-      prisma.lead.findMany({
-        where: selectedRegion !== "ALL" ? { region: selectedRegion } : undefined,
+      prisma.ticket.groupBy({
+        by: ["region", "status"],
+        where: regionalWhere,
+        _count: { _all: true },
+      }),
+      prisma.account.groupBy({
+        by: ["region"],
+        where: regionalWhere,
+        _count: { _all: true },
       }),
     ]);
 
     // 3. High-level KPIs
-    const openDeals = deals.filter((d) => d.status === "OPEN");
-    const wonDeals = deals.filter((d) => d.status === "WON");
-    const totalPipelineValue = openDeals.reduce((sum, d) => sum + d.value, 0);
-    const totalWonValue = wonDeals.reduce((sum, d) => sum + d.value, 0);
+    const openDealStats = dealStatusStats.find((entry) => entry.status === "OPEN");
+    const wonDealStats = dealStatusStats.find((entry) => entry.status === "WON");
+    const lostDealStats = dealStatusStats.find((entry) => entry.status === "LOST");
+    const totalPipelineValue = moneyToNumber(openDealStats?._sum.value);
+    const totalWonValue = moneyToNumber(wonDealStats?._sum.value);
+    const wonDealsCount = wonDealStats?._count._all || 0;
+    const lostDealsCount = lostDealStats?._count._all || 0;
+    const totalDealsCount = dealStatusStats.reduce((sum, entry) => sum + entry._count._all, 0);
     const totalTarget = isSalesManager(user) ? 3000000 : 10000000; // Q3 Target
     const targetAchievementRate = Math.round((totalWonValue / totalTarget) * 100);
 
     const winRate =
-      deals.length > 0
-        ? Math.round((wonDeals.length / (wonDeals.length + deals.filter((d) => d.status === "LOST").length || 1)) * 100)
+      wonDealsCount + lostDealsCount > 0
+        ? Math.round((wonDealsCount / (wonDealsCount + lostDealsCount)) * 100)
         : 0;
 
     // 4. Regional Breakdown (For GM sees all 4 regions; For Sales Manager sees their region)
-    const allDeals = await prisma.deal.findMany({
-      include: { stage: true },
-    });
-    const allTickets = await prisma.ticket.findMany();
-    const allAccounts = await prisma.account.findMany();
-
     const regionKeys = isSalesManager(user) && user ? [user.region] : ["NORTH", "CENTRAL", "SOUTH", "OVERSEAS"];
     const regionNames: Record<string, string> = {
       NORTH: "北部區域 (台北/新竹)",
@@ -85,33 +119,38 @@ export async function GET(request: Request) {
     };
 
     const regionalBreakdown = regionKeys.map((reg) => {
-      const regDeals = allDeals.filter((d) => d.region === reg);
-      const regWon = regDeals.filter((d) => d.status === "WON");
-      const regOpen = regDeals.filter((d) => d.status === "OPEN");
-      const regWonValue = regWon.reduce((sum, d) => sum + d.value, 0);
-      const regPipelineValue = regOpen.reduce((sum, d) => sum + d.value, 0);
-      const regTickets = allTickets.filter((t) => t.region === reg);
-      const regAccounts = allAccounts.filter((a) => a.region === reg);
+      const regDeals = regionalDealStats.filter((entry) => entry.region === reg);
+      const regWon = regDeals.find((entry) => entry.status === "WON");
+      const regOpen = regDeals.find((entry) => entry.status === "OPEN");
+      const regWonValue = moneyToNumber(regWon?._sum.value);
+      const regPipelineValue = moneyToNumber(regOpen?._sum.value);
+      const regTickets = regionalTicketStats.filter((entry) => entry.region === reg);
+      const regAccounts = regionalAccountStats.find((entry) => entry.region === reg);
 
       return {
         region: reg,
         name: regionNames[reg] || reg,
-        dealsCount: regDeals.length,
+        dealsCount: regDeals.reduce((sum, entry) => sum + entry._count._all, 0),
         wonValue: regWonValue,
         pipelineValue: regPipelineValue,
         totalValue: regWonValue + regPipelineValue,
-        accountsCount: regAccounts.length,
-        openTicketsCount: regTickets.filter((t) => t.status !== "RESOLVED" && t.status !== "CLOSED").length,
+        accountsCount: regAccounts?._count._all || 0,
+        openTicketsCount: regTickets
+          .filter((entry) => entry.status !== "RESOLVED" && entry.status !== "CLOSED")
+          .reduce((sum, entry) => sum + entry._count._all, 0),
       };
     });
 
     // 5. Sales Rep Leaderboard (Rank subordinate sales for manager, or all sales for GM)
+    const userStats = new Map(
+      userDealStats.map((entry) => [`${entry.assignedToId}:${entry.status}`, entry])
+    );
     const salesLeaderboard = users
       .map((u) => {
-        const uWonDeals = u.assignedDeals.filter((d) => d.status === "WON");
-        const uOpenDeals = u.assignedDeals.filter((d) => d.status === "OPEN");
-        const wonAmount = uWonDeals.reduce((sum, d) => sum + d.value, 0);
-        const pipelineAmount = uOpenDeals.reduce((sum, d) => sum + d.value, 0);
+        const won = userStats.get(`${u.id}:WON`);
+        const open = userStats.get(`${u.id}:OPEN`);
+        const wonAmount = moneyToNumber(won?._sum.value);
+        const pipelineAmount = moneyToNumber(open?._sum.value);
 
         return {
           id: u.id,
@@ -119,13 +158,14 @@ export async function GET(request: Request) {
           title: u.title,
           region: u.region,
           wonAmount,
-          wonCount: uWonDeals.length,
-          openCount: uOpenDeals.length,
+          wonCount: won?._count._all || 0,
+          openCount: open?._count._all || 0,
           pipelineAmount,
           totalContribution: wonAmount + pipelineAmount,
         };
       })
-      .sort((a, b) => b.wonAmount - a.wonAmount);
+      .sort((a, b) => b.wonAmount - a.wonAmount || b.pipelineAmount - a.pipelineAmount)
+      .slice(0, 20);
 
     // 6. Executive AI / GM Key Takeaways
     const executiveTakeaways = [
@@ -148,7 +188,7 @@ export async function GET(request: Request) {
       },
     ];
 
-    return NextResponse.json({
+    return apiSuccess(request, executiveReportResponseSchema, {
       currentUser: user,
       isGMOrAdmin: isGMOrAdmin(user),
       isSalesManager: isSalesManager(user),
@@ -158,10 +198,10 @@ export async function GET(request: Request) {
         totalTarget,
         targetAchievementRate,
         winRate,
-        totalDealsCount: deals.length,
-        totalAccountsCount: accounts.length,
-        totalTicketsCount: tickets.length,
-        totalLeadsCount: leads.length,
+        totalDealsCount,
+        totalAccountsCount,
+        totalTicketsCount,
+        totalLeadsCount,
       },
       regionalBreakdown,
       salesLeaderboard,
@@ -169,6 +209,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Executive Reports API Error:", error);
-    return NextResponse.json({ error: "Failed to generate executive report" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "REPORT_READ_FAILED", "無法產生營運報表");
   }
 }

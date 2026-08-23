@@ -1,63 +1,103 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, getEntityScopeFilter } from "@/lib/auth";
+import { getDealScopeFilter, getEntityScopeFilter } from "@/lib/auth";
+import { requirePermission } from "@/lib/authorization";
+import { recordAuditEvent } from "@/lib/audit";
+import { apiErrorFromUnknown, paginatedArrayResponse, parseJsonBody, parseQuery } from "@/lib/api-response";
+import { accountCreateSchema, regionalListQuerySchema } from "@/lib/contracts";
+import { accountListItemResponseSchema, accountResponseSchema } from "@/lib/response-contracts";
+import { executeIdempotentMutation, replayIdempotentMutation } from "@/lib/idempotency";
+import { moneyToNumber } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const user = await getCurrentUser();
-    const { searchParams } = new URL(request.url);
-    const queryRegion = searchParams.get("region");
+    const authorization = await requirePermission("accounts", "read", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
+    const query = parseQuery(request, regionalListQuerySchema);
+    if (!query.ok) return query.response;
+    const { region: queryRegion, cursor, limit } = query.data;
 
     const entityWhere = getEntityScopeFilter(user, queryRegion);
 
     const accounts = await prisma.account.findMany({
       where: entityWhere,
       include: {
-        contacts: true,
-        deals: {
-          include: {
-            stage: true,
-          },
-        },
-        tickets: true,
+        _count: { select: { contacts: true } },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
-    return NextResponse.json(accounts);
+    const dealTotals = accounts.length
+      ? await prisma.deal.groupBy({
+          by: ["accountId"],
+          where: {
+            ...getDealScopeFilter(user, queryRegion),
+            accountId: { in: accounts.map((account) => account.id) },
+          },
+          _sum: { value: true },
+        })
+      : [];
+    const totalByAccount = new Map(
+      dealTotals.map((entry) => [entry.accountId, moneyToNumber(entry._sum.value)])
+    );
+    const accountItems = accounts.map(({ _count, ...account }) => ({
+      ...account,
+      contactCount: _count.contacts,
+      totalDealValue: totalByAccount.get(account.id) || 0,
+    }));
+
+    return paginatedArrayResponse(request, accountItems, limit, accountListItemResponseSchema);
   } catch (error) {
     console.error("Accounts GET Error:", error);
-    return NextResponse.json({ error: "Failed to fetch accounts" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "ACCOUNTS_READ_FAILED", "無法取得企業客戶資料");
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const user = await getCurrentUser();
-    const body = await request.json();
-    const { name, industry, region, website, phone, address, customFields } = body;
+    const authorization = await requirePermission("accounts", "create", request);
+    if (!authorization.ok) return authorization.response;
+    const user = authorization.user;
+    const parsed = await parseJsonBody(request, accountCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const replay = await replayIdempotentMutation(request, user.id, parsed.data);
+    if (replay) return replay;
+    const { name, industry, region, website, phone, address, customFields } = parsed.data;
 
-    if (!name) {
-      return NextResponse.json({ error: "企業公司名稱為必填" }, { status: 400 });
-    }
-
-    const account = await prisma.account.create({
-      data: {
-        name,
-        industry,
-        region: region || user?.region || "NORTH",
-        website,
-        phone,
-        address,
-        customFields: customFields ? JSON.stringify(customFields) : null,
+    return executeIdempotentMutation({
+      request,
+      actorId: user.id,
+      payload: parsed.data,
+      responseSchema: accountResponseSchema,
+      operation: async (tx) => {
+        const createdAccount = await tx.account.create({
+          data: {
+            name,
+            industry,
+            region: user.region === "ALL" ? (region || "NORTH") : user.region,
+            website,
+            phone,
+            address,
+            customFields: customFields ? JSON.stringify(customFields) : null,
+          },
+        });
+        await recordAuditEvent({
+          request,
+          actor: user,
+          action: "create",
+          resource: "accounts",
+          resourceId: createdAccount.id,
+          result: "SUCCESS",
+        }, tx);
+        return createdAccount;
       },
     });
-
-    return NextResponse.json(account, { status: 201 });
   } catch (error) {
     console.error("Accounts POST Error:", error);
-    return NextResponse.json({ error: "Failed to create account" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "ACCOUNT_CREATE_FAILED", "無法建立企業客戶");
   }
 }

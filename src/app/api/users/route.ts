@@ -1,13 +1,38 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, isGMOrAdmin } from "@/lib/auth";
+import { hashPassword } from "@/lib/password";
+import { requirePermission } from "@/lib/authorization";
+import { recordAuditEvent } from "@/lib/audit";
+import { apiError, apiErrorFromUnknown, paginatedArrayResponse, parseJsonBody, parseQuery } from "@/lib/api-response";
+import { userCreateSchema, userListQuerySchema } from "@/lib/contracts";
+import { userListItemResponseSchema, userResponseSchema } from "@/lib/response-contracts";
+import { executeIdempotentMutation, replayIdempotentMutation } from "@/lib/idempotency";
+import { canManageUserRole, roleRequiresRegionalScope } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authorization = await requirePermission("users", "read", request);
+    if (!authorization.ok) return authorization.response;
+    const query = parseQuery(request, userListQuerySchema);
+    if (!query.ok) return query.response;
+    const { cursor, limit } = query.data;
+
     const users = await prisma.user.findMany({
-      include: {
+      where: { isActive: true },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        avatar: true,
+        role: true,
+        department: true,
+        region: true,
+        title: true,
+        managerId: true,
+        createdAt: true,
+        updatedAt: true,
         manager: {
           select: { id: true, name: true, title: true, region: true },
         },
@@ -18,63 +43,104 @@ export async function GET() {
           select: { id: true, value: true, status: true },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
-    return NextResponse.json(users);
+    return paginatedArrayResponse(request, users, limit, userListItemResponseSchema);
   } catch (error) {
     console.error("Users GET API Error:", error);
-    return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "USERS_READ_FAILED", "無法取得使用者資料");
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const currentUser = await getCurrentUser();
+    const authorization = await requirePermission("users", "create", request);
+    if (!authorization.ok) return authorization.response;
 
-    // Only GM / Admin can create users and assign territories
-    if (!isGMOrAdmin(currentUser)) {
-      return NextResponse.json({ error: "權限不足：僅總經理 (GM) 或系統管理員可建立人員帳號與分配區域" }, { status: 403 });
+    const parsed = await parseJsonBody(request, userCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const replay = await replayIdempotentMutation(request, authorization.user.id, parsed.data);
+    if (replay) return replay;
+    const { username, password, name, email, role, department, region, title, managerId } = parsed.data;
+
+    const effectiveRole = role || "SALES";
+    const effectiveRegion = region || "NORTH";
+    if (roleRequiresRegionalScope(effectiveRole) && effectiveRegion === "ALL") {
+      return apiError(request, 422, "INVALID_ROLE_REGION", "業務角色必須指派特定區域");
+    }
+    if (effectiveRole === "MARKETING_MANAGER" && effectiveRegion !== "ALL") {
+      return apiError(request, 422, "INVALID_ROLE_REGION", "市場部主管必須指派全區總部範圍");
+    }
+    if (managerId) {
+      const manager = await prisma.user.findFirst({
+        where: {
+          id: managerId,
+          isActive: true,
+          role: { in: ["ADMIN", "GM", "MARKETING_MANAGER", "SALES_MANAGER"] },
+          region: { in: ["ALL", effectiveRegion] },
+        },
+        select: { id: true, role: true },
+      });
+      if (!manager) return apiError(request, 422, "INVALID_MANAGER", "指定主管不存在、角色不符或不在相同區域");
+      if (!canManageUserRole(manager.role, effectiveRole)) {
+        return apiError(request, 422, "INVALID_MANAGER_ROLE", "指定主管與成員角色不符合組織階層");
+      }
     }
 
-    const body = await request.json();
-    const { username, password, name, email, role, department, region, title, managerId } = body;
-
-    if (!username || !password || !name || !email) {
-      return NextResponse.json({ error: "帳號、密碼、姓名與 Email 為必填欄位" }, { status: 400 });
-    }
-
-    // Check username or email uniqueness
-    const existing = await prisma.user.findFirst({
-      where: {
-        OR: [{ username }, { email }],
+    const passwordHash = await hashPassword(password);
+    return executeIdempotentMutation({
+      request,
+      actorId: authorization.user.id,
+      payload: parsed.data,
+      responseSchema: userResponseSchema,
+      operation: async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            username,
+            password: passwordHash,
+            name,
+            email,
+            role: effectiveRole,
+            department: department || "業務部",
+            region: effectiveRegion,
+            title: title || "業務代表",
+            managerId: managerId || null,
+          },
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            email: true,
+            avatar: true,
+            role: true,
+            department: true,
+            region: true,
+            title: true,
+            managerId: true,
+            createdAt: true,
+            updatedAt: true,
+            manager: {
+              select: { id: true, name: true, title: true, region: true },
+            },
+          },
+        });
+        await recordAuditEvent({
+          request,
+          actor: authorization.user,
+          action: "create",
+          resource: "users",
+          resourceId: createdUser.id,
+          result: "SUCCESS",
+          details: { role: createdUser.role, region: createdUser.region },
+        }, tx);
+        return createdUser;
       },
     });
-
-    if (existing) {
-      return NextResponse.json({ error: "此帳號 (Username) 或 Email 已被使用，請更換" }, { status: 400 });
-    }
-
-    const user = await prisma.user.create({
-      data: {
-        username,
-        password,
-        name,
-        email,
-        role: role || "SALES",
-        department: department || "業務部",
-        region: region || "NORTH",
-        title: title || "業務代表",
-        managerId: managerId || null,
-      },
-      include: {
-        manager: true,
-      },
-    });
-
-    return NextResponse.json(user, { status: 201 });
   } catch (error) {
     console.error("Users POST API Error:", error);
-    return NextResponse.json({ error: "建立人員資料失敗" }, { status: 500 });
+    return apiErrorFromUnknown(request, error, "USER_CREATE_FAILED", "建立人員資料失敗");
   }
 }

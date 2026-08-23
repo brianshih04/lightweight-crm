@@ -35,6 +35,8 @@ const ORG_STRUCTURE = {
     { username: "brenda", name: "Brenda", title: "訂單管理員（支援各行銷部）" },
   ],
   supportManager: { username: "kidd", name: "Kidd", department: "客戶服務部", title: "客服部主管" },
+  // Kidd 兼任企劃部主管（與客服部主管分開兩個帳號，比照 GM/市場部主管模式）
+  planningManager: { username: "kidd_planning", name: "Kidd", department: "企劃部", title: "企劃部主管" },
 } as const;
 
 async function main() {
@@ -166,6 +168,20 @@ async function main() {
       department: ORG_STRUCTURE.supportManager.department,
       region: "ALL",
       title: ORG_STRUCTURE.supportManager.title,
+      managerId: gm.id,
+    },
+  });
+
+  await prisma.user.create({
+    data: {
+      username: ORG_STRUCTURE.planningManager.username,
+      password: passwordHash,
+      name: ORG_STRUCTURE.planningManager.name,
+      email: "kidd.planning@company.com",
+      role: "MARKETING_MANAGER",
+      department: ORG_STRUCTURE.planningManager.department,
+      region: "ALL",
+      title: ORG_STRUCTURE.planningManager.title,
       managerId: gm.id,
     },
   });

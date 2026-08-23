@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,15 +14,13 @@ import {
   Workflow,
   Headset,
   Sparkles,
-  ChevronRight,
   LucideIcon,
   LogOut,
   UserCog,
-  Shield,
-  Award,
   ShieldAlert,
 } from "lucide-react";
 import { cn, REGIONS } from "@/lib/utils";
+import type { SessionUser } from "@/lib/auth";
 
 interface NavItem {
   name: string;
@@ -76,38 +74,26 @@ const navigation: NavSection[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-        }
-      })
-      .catch(console.error);
-  }, []);
 
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
-      window.location.href = "/login";
     } catch (err) {
       console.error(err);
     }
+    window.location.href = "/login";
   };
 
-  const isAdmin = currentUser?.role === "ADMIN";
-  const isGM = currentUser?.role === "GM";
-  const userRegionLabel = REGIONS[currentUser?.region || "ALL"]?.label?.split(" ")[0] || "全區";
+  const isAdmin = user.role === "ADMIN";
+  const isGM = user.role === "GM";
+  const userRegionLabel = REGIONS[user.region || "ALL"]?.label?.split(" ")[0] || "全區";
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen border-r border-slate-800">
+    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen border-r border-slate-800 sticky top-0 h-screen">
       {/* Brand Header */}
-      <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-800 bg-slate-950/50">
+      <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-800 bg-slate-950/50 shrink-0">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
           <Sparkles className="w-5 h-5 text-indigo-100" />
         </div>
@@ -125,8 +111,7 @@ export function Sidebar() {
           // Filter items based on user role
           const filteredItems = section.items.filter((item) => {
             if (!item.minRole) return true;
-            if (!currentUser) return false;
-            return item.minRole.includes(currentUser.role);
+            return item.minRole.includes(user.role);
           });
 
           if (filteredItems.length === 0) return null;
@@ -144,6 +129,7 @@ export function Sidebar() {
                   <Link
                     key={item.href}
                     href={targetHref}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150",
                       isActive
@@ -169,34 +155,34 @@ export function Sidebar() {
       </div>
 
       {/* Current User Role Footer */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/40">
+      <div className="p-3 border-t border-slate-800 bg-slate-950/40 shrink-0">
         <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-800">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center text-xs text-white shrink-0 ${
               isAdmin ? "bg-rose-600" : isGM ? "bg-amber-600" : "bg-indigo-600"
             }`}>
-              {currentUser ? currentUser.name.slice(0, 1) : "U"}
+              {user.name.slice(0, 1)}
             </div>
             <div className="text-left min-w-0">
-              <p className="text-xs font-semibold text-slate-200 truncate">{currentUser ? currentUser.name : "使用者"}</p>
+              <p className="text-xs font-semibold text-slate-200 truncate">{user.name}</p>
               <p className="text-[10px] text-indigo-300 truncate">
                 {isAdmin
                   ? "系統管理員 (Admin)"
                   : isGM
-                  ? "總經理 (全區業務)"
-                  : currentUser?.role === "MARKETING_MANAGER"
-                  ? "市場部主管 · 全區"
-                  : currentUser?.role === "SALES_MANAGER"
-                  ? `區域主管 · ${userRegionLabel}`
-                  : currentUser?.role === "ORDER_ADMIN"
-                  ? `訂單管理員 · ${userRegionLabel}`
-                  : `Sales · ${userRegionLabel}`}
+                    ? "總經理 (全區業務)"
+                    : user.role === "MARKETING_MANAGER"
+                      ? "市場部主管 · 全區"
+                      : user.role === "SALES_MANAGER"
+                        ? `區域主管 · ${userRegionLabel}`
+                        : user.role === "ORDER_ADMIN"
+                          ? `訂單管理員 · ${userRegionLabel}`
+                          : `Sales · ${userRegionLabel}`}
               </p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            title="登出"
+            aria-label="登出"
             className="text-slate-500 hover:text-rose-400 p-1 rounded-md transition shrink-0"
           >
             <LogOut className="w-4 h-4" />

@@ -205,10 +205,20 @@ async function main() {
     { managerId: createdUsers.get("role_manager").id }
   );
   assert.equal(orderAdminAssignment.status, 200, orderAdminAssignment.text);
-  const invalidHierarchyAssignment = await request(
+  // 訂單管理員是支援單位，允許掛在市場部主管之下
+  const orderAdminUnderMarketing = await request(
     baseUrl,
     "PATCH",
     `/api/users/${orderAdmin.id}`,
+    adminCookie,
+    { managerId: marketingManager.id }
+  );
+  assert.equal(orderAdminUnderMarketing.status, 200, orderAdminUnderMarketing.text);
+  // 市場部主管仍不可擔任 Sales 的主管
+  const invalidHierarchyAssignment = await request(
+    baseUrl,
+    "PATCH",
+    `/api/users/${createdUsers.get("role_sales_n").id}`,
     adminCookie,
     { managerId: marketingManager.id }
   );

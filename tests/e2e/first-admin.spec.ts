@@ -99,8 +99,8 @@ test("first visitor must choose a password and becomes the only bootstrap ADMIN"
   const contact = await createContact.json();
   await page.goto(`/contacts/${contact.id}`);
   await expect(page.getByRole("heading", { name: "Browser Contact" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "關聯商機 (0)" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "關聯商機 (0)" })).toBeVisible();
   await expect(page.getByText("建立了新聯絡人 Browser Contact")).toBeVisible();
-  await page.getByRole("button", { name: "售後工單 (0)" }).click();
+  await page.getByRole("tab", { name: "售後工單 (0)" }).click();
   await expect(page.getByText("尚無售後工單記錄")).toBeVisible();
 });

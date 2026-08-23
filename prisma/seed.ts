@@ -3,6 +3,39 @@ import { hashPassword, validatePassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
 
+// 實際組織結構：全體行銷業務皆為海外市場，實際負責市場記錄於 title。
+// 訂單管理員為支援單位，組織掛在市場部主管（thomas_mkt）之下。
+const ORG_STRUCTURE = {
+  gm: { username: "thomas", name: "Thomas", department: "總經理室", title: "總經理 (GM)" },
+  marketingManager: {
+    username: "thomas_mkt",
+    name: "Thomas",
+    department: "市場部",
+    title: "市場部主管",
+  },
+  salesTeams: [
+    {
+      manager: { username: "ivan", name: "Ivan", title: "第一行銷部主管（中南美／菲律賓）" },
+      department: "第一行銷部",
+      reps: [{ username: "maite", name: "Maite", title: "行銷業務專員（中南美／菲律賓）" }],
+    },
+    {
+      manager: { username: "jane", name: "Jane", title: "第二行銷部主管（美國／歐洲／俄羅斯 OBM／印度 TVS-E）" },
+      department: "第二行銷部",
+      reps: [{ username: "lauren", name: "Lauren", title: "行銷業務專員（美國／歐洲／俄羅斯 OBM／印度 TVS-E）" }],
+    },
+    {
+      manager: { username: "james", name: "James", title: "第三行銷部主管（俄羅斯 Katusha／中東 DOX／以色列／伊朗）" },
+      department: "第三行銷部",
+      reps: [{ username: "vivien", name: "Vivien", title: "行銷業務專員（俄羅斯 Katusha／中東 DOX／以色列／伊朗）" }],
+    },
+  ],
+  orderAdmins: [
+    { username: "linda", name: "Linda", title: "訂單管理員（支援各行銷部）" },
+    { username: "brenda", name: "Brenda", title: "訂單管理員（支援各行銷部）" },
+  ],
+} as const;
+
 async function main() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("Destructive demo seed is disabled when NODE_ENV=production");
@@ -12,7 +45,7 @@ async function main() {
   if (!demoPassword || passwordError) {
     throw new Error(`DEMO_SEED_PASSWORD is required. ${passwordError || ""}`.trim());
   }
-  const demoPasswordHash = await hashPassword(demoPassword);
+  const passwordHash = await hashPassword(demoPassword);
 
   console.log("🌱 Cleaning up database...");
   await prisma.activity.deleteMany({});
@@ -33,11 +66,11 @@ async function main() {
   await prisma.user.deleteMany({});
 
   console.log("🌱 Seeding personnel structure (roles, regions, hierarchy)...");
-  // 1. System Administrator (系統管理員)
-  const adminUser = await prisma.user.create({
+  // 系統管理員僅存在於隔離的 demo DB；正式環境請使用首次啟用流程建立 ADMIN。
+  await prisma.user.create({
     data: {
       username: "admin",
-      password: demoPasswordHash,
+      password: passwordHash,
       name: "系統管理員 (Admin)",
       email: "admin@company.com",
       role: "ADMIN",
@@ -47,146 +80,80 @@ async function main() {
     },
   });
 
-  // 2. General Manager (總經理 - 獨立專屬帳號)
-  const gmUser = await prisma.user.create({
+  const gm = await prisma.user.create({
     data: {
-      username: "peter_gm",
-      password: demoPasswordHash,
-      name: "柯博文 (Peter)",
-      email: "peter.gm@company.com",
+      username: ORG_STRUCTURE.gm.username,
+      password: passwordHash,
+      name: ORG_STRUCTURE.gm.name,
+      email: "thomas@company.com",
       role: "GM",
-      department: "總經理室",
+      department: ORG_STRUCTURE.gm.department,
       region: "ALL",
-      title: "總經理 (CEO / GM)",
+      title: ORG_STRUCTURE.gm.title,
     },
   });
 
-  // 3. Regional Sales Manager (北部業務主管)
-  const salesNorthMgr = await prisma.user.create({
+  const marketingManager = await prisma.user.create({
     data: {
-      username: "alice_mgr",
-      password: demoPasswordHash,
-      name: "張雅婷 (Alice)",
-      email: "alice.sales@company.com",
-      role: "SALES_MANAGER",
-      department: "業務部",
-      region: "NORTH",
-      title: "北部業務處主管",
-      managerId: gmUser.id,
-    },
-  });
-
-  // 4. Subordinate Sales Reps
-  await prisma.user.create({
-    data: {
-      username: "kevin_sales",
-      password: demoPasswordHash,
-      name: "林凱文 (Kevin)",
-      email: "kevin.sales@company.com",
-      role: "SALES",
-      department: "業務部",
-      region: "NORTH",
-      title: "北部業務代表",
-      managerId: salesNorthMgr.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "oliver_order",
-      password: demoPasswordHash,
-      name: "林歐文 (Oliver)",
-      email: "oliver.order@company.com",
-      role: "ORDER_ADMIN",
-      department: "業務部",
-      region: "NORTH",
-      title: "北部訂單管理員",
-      managerId: salesNorthMgr.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "bob_sales",
-      password: demoPasswordHash,
-      name: "李宗翰 (Bob)",
-      email: "bob.sales@company.com",
-      role: "SALES",
-      department: "業務部",
-      region: "CENTRAL",
-      title: "中部資深業務經理",
-      managerId: gmUser.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "charlie_sales",
-      password: demoPasswordHash,
-      name: "趙冠宇 (Charlie)",
-      email: "charlie.sales@company.com",
-      role: "SALES",
-      department: "業務部",
-      region: "SOUTH",
-      title: "南部業務代表",
-      managerId: gmUser.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "sophia_sales",
-      password: demoPasswordHash,
-      name: "孫佩華 (Sophia)",
-      email: "sophia.overseas@company.com",
-      role: "SALES",
-      department: "海外事業部",
-      region: "OVERSEAS",
-      title: "海外亞太區商務代表",
-      managerId: gmUser.id,
-    },
-  });
-
-  // 5. Marketing hierarchy & Customer Support
-  const mktManager = await prisma.user.create({
-    data: {
-      username: "maria_mkt_mgr",
-      password: demoPasswordHash,
-      name: "林美玲 (Maria)",
-      email: "maria.mkt.manager@company.com",
+      username: ORG_STRUCTURE.marketingManager.username,
+      password: passwordHash,
+      name: ORG_STRUCTURE.marketingManager.name,
+      email: "thomas.mkt@company.com",
       role: "MARKETING_MANAGER",
-      department: "行銷部",
+      department: ORG_STRUCTURE.marketingManager.department,
       region: "ALL",
-      title: "市場部主管",
-      managerId: gmUser.id,
-    },
-  });
-  await prisma.user.create({
-    data: {
-      username: "carol_mkt",
-      password: demoPasswordHash,
-      name: "陳品妤 (Carol)",
-      email: "carol.mkt@company.com",
-      role: "MARKETING",
-      department: "行銷部",
-      region: "ALL",
-      title: "行銷企劃主管",
-      managerId: mktManager.id,
+      title: ORG_STRUCTURE.marketingManager.title,
+      managerId: gm.id,
     },
   });
 
-  await prisma.user.create({
-    data: {
-      username: "david_support",
-      password: demoPasswordHash,
-      name: "王建宏 (David)",
-      email: "david.support@company.com",
-      role: "SUPPORT",
-      department: "客戶服務部",
-      region: "ALL",
-      title: "客服支援組長",
-    },
-  });
+  for (const team of ORG_STRUCTURE.salesTeams) {
+    const manager = await prisma.user.create({
+      data: {
+        username: team.manager.username,
+        password: passwordHash,
+        name: team.manager.name,
+        email: `${team.manager.username}@company.com`,
+        role: "SALES_MANAGER",
+        department: team.department,
+        region: "OVERSEAS",
+        title: team.manager.title,
+        managerId: gm.id,
+      },
+    });
+
+    for (const rep of team.reps) {
+      await prisma.user.create({
+        data: {
+          username: rep.username,
+          password: passwordHash,
+          name: rep.name,
+          email: `${rep.username}@company.com`,
+          role: "SALES",
+          department: team.department,
+          region: "OVERSEAS",
+          title: rep.title,
+          managerId: manager.id,
+        },
+      });
+    }
+  }
+
+  for (const orderAdmin of ORG_STRUCTURE.orderAdmins) {
+    await prisma.user.create({
+      data: {
+        username: orderAdmin.username,
+        password: passwordHash,
+        name: orderAdmin.name,
+        email: `${orderAdmin.username}@company.com`,
+        role: "ORDER_ADMIN",
+        department: "訂單管理（支援）",
+        region: "OVERSEAS",
+        title: orderAdmin.title,
+        managerId: marketingManager.id,
+      },
+    });
+  }
 
   console.log("🌱 Seeding default sales pipeline & stages...");
   const pipeline = await prisma.pipeline.create({

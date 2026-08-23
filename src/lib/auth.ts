@@ -203,7 +203,9 @@ export function roleRequiresRegionalScope(role: string): boolean {
 export function canManageUserRole(managerRole: string, subordinateRole: string): boolean {
   if (managerRole === "ADMIN" || managerRole === "GM") return true;
   if (managerRole === "SALES_MANAGER") return ["SALES", "ORDER_ADMIN"].includes(subordinateRole);
-  if (managerRole === "MARKETING_MANAGER") return subordinateRole === "MARKETING";
+  // 訂單管理員是支援單位，組織上可掛在市場部主管之下（僅影響主管欄位驗證，
+  // 使用者管理 API 仍限 ADMIN/GM 呼叫）。
+  if (managerRole === "MARKETING_MANAGER") return ["MARKETING", "ORDER_ADMIN"].includes(subordinateRole);
   return false;
 }
 

@@ -58,3 +58,19 @@ export const TICKET_STATUS_CONFIG: Record<string, { label: string; badge: string
   RESOLVED: { label: "已解決", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   CLOSED: { label: "已結案", badge: "bg-slate-100 text-slate-600 border-slate-200" },
 };
+
+export const ROLE_LABELS: Record<string, string> = {
+  ADMIN: "系統管理者",
+  GM: "總經理",
+  MARKETING_MANAGER: "市場部主管",
+  SALES_MANAGER: "區域主管",
+  ORDER_ADMIN: "訂單管理員",
+  SALES: "Sales",
+  MARKETING: "市場部專員",
+  SUPPORT: "客服支援",
+};
+
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return "未知角色";
+  return ROLE_LABELS[role] ?? role;
+}

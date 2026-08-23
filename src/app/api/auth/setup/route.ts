@@ -65,6 +65,7 @@ export async function POST(request: Request) {
           region: true,
           title: true,
           managerId: true,
+          mustChangePassword: true,
         },
       });
     });

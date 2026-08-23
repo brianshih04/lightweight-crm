@@ -14,11 +14,14 @@ export interface FieldProps {
 export function Field({ label, required, error, children }: FieldProps) {
   return (
     <div>
+      {/* label 包裹控制項以建立無障礙關聯（點擊文字即可聚焦） */}
       <label className="block text-xs font-semibold text-slate-700 mb-1">
-        {label}
-        {required && <span className="text-rose-500"> *</span>}
+        <span className="block mb-1">
+          {label}
+          {required && <span className="text-rose-500"> *</span>}
+        </span>
+        {children}
       </label>
-      {children}
       {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
     </div>
   );

@@ -31,6 +31,7 @@ export async function GET(request: Request) {
         region: true,
         title: true,
         managerId: true,
+        mustChangePassword: true,
         createdAt: true,
         updatedAt: true,
         manager: {
@@ -108,6 +109,8 @@ export async function POST(request: Request) {
             region: effectiveRegion,
             title: title || "業務代表",
             managerId: managerId || null,
+            // 初始密碼由管理者設定：使用者首次登入必須自行更改密碼
+            mustChangePassword: true,
           },
           select: {
             id: true,
@@ -120,6 +123,7 @@ export async function POST(request: Request) {
             region: true,
             title: true,
             managerId: true,
+            mustChangePassword: true,
             createdAt: true,
             updatedAt: true,
             manager: {

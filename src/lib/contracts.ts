@@ -211,3 +211,12 @@ export const userUpdateSchema = z.object({
 }).strict().refine((value) => Object.values(value).some((entry) => entry !== undefined), {
   message: "至少需要一個更新欄位",
 });
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+  newPassword: password,
+  newPasswordConfirm: password,
+}).strict().refine((value) => value.newPassword === value.newPasswordConfirm, {
+  path: ["newPasswordConfirm"],
+  message: "兩次輸入的新密碼不一致",
+});

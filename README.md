@@ -75,7 +75,7 @@
 * **API client**：`src/lib/api-client.ts` 解析統一錯誤信封（含 422 欄位層級訊息）、Session 過期自動導回登入頁、支援 AbortController 的分頁載入
 * **ORM & 資料庫**：Prisma ORM + SQLite（本地快速開發）/ PostgreSQL 16（generated schema、native enums、baseline migration 與真實整合測試）
 * **身分驗證**：資料庫可撤銷 opaque Session；Cookie 僅保存 256-bit 隨機 token，資料庫只保存 SHA-256 token hash
-* **登入防護**：持久化帳號/IP 節流、同源 Origin 驗證、Secure/HttpOnly/SameSite Cookie
+* **登入防護**：持久化帳號/IP 節流、同源 Origin 驗證、Secure/HttpOnly/SameSite Cookie；初始密碼（管理者建立或重設）於首次登入強制更改——未完成前所有受保護 API 回 `403 PASSWORD_CHANGE_REQUIRED`，更改後撤銷其他裝置 Session
 * **安全稽核**：全域 request ID、安全標頭與持久化 AuditEvent；僅 ADMIN 可在 `/settings/audit` 查看狀態卡、告警、高頻來源、篩選與 cursor 分頁，底層 `/api/audit/summary` 提供 15 分鐘／24 小時聚合與 WARNING/CRITICAL 訊號
 * **API 合約**：Zod request validation 與 response DTO allowlist、64 KiB JSON body cap、統一 error/code/requestId；Account、Contact、Lead、Ticket、User、Deal、Campaign、Workflow 採最大 100 筆的 cursor pagination
 * **資料一致性**：核心多步驟流程、AuditEvent 與可選 `Idempotency-Key` 回應快照同 transaction；工單使用年度原子 TicketSequence；本機 SQLite 寫入以 FIFO 序列化，PostgreSQL 保持資料庫原生並行

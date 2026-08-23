@@ -22,6 +22,7 @@ export const sessionUserResponseSchema = z.object({
   region: z.string(),
   title: z.string(),
   managerId: nullableString.optional(),
+  mustChangePassword: z.boolean().optional(),
 });
 
 export const publicUserResponseSchema = sessionUserResponseSchema.extend({

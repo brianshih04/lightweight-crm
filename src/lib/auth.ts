@@ -23,6 +23,7 @@ export interface SessionUser {
   region: UserRegion;
   title: string;
   managerId?: string | null;
+  mustChangePassword: boolean;
 }
 
 export const publicUserSelect = {
@@ -36,6 +37,7 @@ export const publicUserSelect = {
   region: true,
   title: true,
   managerId: true,
+  mustChangePassword: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -97,6 +99,21 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
   });
 }
 
+/** 撤銷使用者目前 cookie 以外的所有有效 Session（用於自行更改密碼後強制其他裝置重新登入） */
+export async function revokeOtherUserSessions(userId: string): Promise<void> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  const currentTokenHash = token ? hashSessionToken(token) : null;
+  await prisma.authSession.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+      ...(currentTokenHash ? { tokenHash: { not: currentTokenHash } } : {}),
+    },
+    data: { revokedAt: new Date() },
+  });
+}
+
 export function sessionUserFromDatabase(user: {
   id: string;
   username: string;
@@ -107,6 +124,7 @@ export function sessionUserFromDatabase(user: {
   region: string;
   title: string;
   managerId: string | null;
+  mustChangePassword: boolean;
 }): SessionUser | null {
   if (!USER_ROLES.has(user.role as UserRole) || !USER_REGIONS.has(user.region as UserRegion)) {
     return null;
@@ -121,6 +139,7 @@ export function sessionUserFromDatabase(user: {
     region: user.region as UserRegion,
     title: user.title,
     managerId: user.managerId,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 
@@ -145,6 +164,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
           title: true,
           managerId: true,
           isActive: true,
+          mustChangePassword: true,
         },
       },
     },

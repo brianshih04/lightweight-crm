@@ -12,6 +12,10 @@ export default async function AppLayout({
   if (!user) {
     redirect("/login");
   }
+  // 初始密碼未更改者一律導向改密頁；API 層另以 PASSWORD_CHANGE_REQUIRED 封鎖
+  if (user.mustChangePassword) {
+    redirect("/change-password");
+  }
 
   return (
     <div className="flex min-h-screen">

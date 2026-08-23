@@ -252,11 +252,61 @@ async function main() {
   assert.equal(selfManager.data.code, "SELF_MANAGER");
 
   async function login(username) {
-    const response = await request(baseUrl, "POST", "/api/auth/login", null, { username, password });
+    const response = await request(baseUrl, "POST", "/api/auth/login", null, {
+      username,
+      password: userPasswords.get(username) ?? password,
+    });
     assert.equal(response.status, 200, `${username}: ${response.text}`);
     assert.ok(response.cookie);
     return response.cookie;
   }
+
+  // 初始密碼強制更換：API 建立的使用者首次登入必須先更改密碼才能存取受保護資源
+  const userPasswords = new Map();
+  for (const [username] of roleUsers) {
+    const initialLogin = await request(baseUrl, "POST", "/api/auth/login", null, { username, password });
+    assert.equal(initialLogin.status, 200, initialLogin.text);
+    assert.equal(initialLogin.data.user.mustChangePassword, true, `${username} 應標記 mustChangePassword`);
+
+    const blocked = await request(baseUrl, "GET", "/api/tickets", initialLogin.cookie);
+    assert.equal(blocked.status, 403, blocked.text);
+    assert.equal(blocked.data.code, "PASSWORD_CHANGE_REQUIRED");
+
+    const wrongCurrent = await request(baseUrl, "POST", "/api/auth/change-password", initialLogin.cookie, {
+      currentPassword: "wrong-current-password",
+      newPassword: `${password}-new`,
+      newPasswordConfirm: `${password}-new`,
+    });
+    assert.equal(wrongCurrent.status, 401, wrongCurrent.text);
+
+    const changed = await request(baseUrl, "POST", "/api/auth/change-password", initialLogin.cookie, {
+      currentPassword: password,
+      newPassword: `${password}-new`,
+      newPasswordConfirm: `${password}-new`,
+    });
+    assert.equal(changed.status, 200, changed.text);
+    userPasswords.set(username, `${password}-new`);
+
+    const allowed = await request(baseUrl, "GET", "/api/tickets", initialLogin.cookie);
+    assert.equal(allowed.status, 200, allowed.text);
+  }
+  // 管理者重設密碼後，使用者需再次於登入時更改密碼
+  const resetByAdmin = await request(baseUrl, "PATCH", `/api/users/${createdUsers.get("role_sales_n").id}`, adminCookie, {
+    password: `${password}-reset`,
+  });
+  assert.equal(resetByAdmin.status, 200, resetByAdmin.text);
+  const afterReset = await request(baseUrl, "POST", "/api/auth/login", null, {
+    username: "role_sales_n",
+    password: `${password}-reset`,
+  });
+  assert.equal(afterReset.status, 200, afterReset.text);
+  assert.equal(afterReset.data.user.mustChangePassword, true, "重設密碼後應重新標記 mustChangePassword");
+  const redoChange = await request(baseUrl, "POST", "/api/auth/change-password", afterReset.cookie, {
+    currentPassword: `${password}-reset`,
+    newPassword: `${password}-new`,
+    newPasswordConfirm: `${password}-new`,
+  });
+  assert.equal(redoChange.status, 200, redoChange.text);
 
   const endpoints = [
     "/api/dashboard",

@@ -83,7 +83,8 @@
 ### 4.2 後端 API 結構 (`src/app/api/`)
 * `/api/auth/login`：驗證帳密、套用帳號/IP 登入節流，建立伺服器端 Session 並寫入 opaque cookie。
 * `/api/auth/logout`：撤銷目前 Session；可選擇登出全部裝置。
-* `/api/auth/me`：前端組件獲取當前登入者資訊。
+* `/api/auth/me`：前端組件獲取當前登入者資訊（含 `mustChangePassword`）。
+* `/api/auth/change-password`：使用者自行更改密碼（驗證目前密碼、新密碼至少 12 字元、清除 `mustChangePassword`、撤銷其他裝置 Session）。`mustChangePassword=true` 的使用者存取任何其他受保護 API 都會回 `403 PASSWORD_CHANGE_REQUIRED`（見 `authorization.ts` 閘門），前端會導向 `/change-password`。管理者建立使用者或重設密碼都會設定此旗標。
 * `/api/audit`：僅 ADMIN 可查詢的 cursor-paginated 稽核事件 API。
 * `/api/users` & `/api/users/[id]`：Admin / GM 專用，建立/編輯成員帳號、分配區域、直屬主管與重設密碼；會拒絕不相容的角色主管、跨區主管、循環與過深階層。
 * `/api/reports/executive`：總經理營運報表數據聚合（限制僅 GM、Admin、Manager 存取）。

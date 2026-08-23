@@ -36,7 +36,11 @@ export async function PATCH(
     if (region) updateData.region = region;
     if (title) updateData.title = title;
     if (managerId !== undefined) updateData.managerId = managerId || null;
-    if (password) updateData.password = await hashPassword(password);
+    if (password) {
+      updateData.password = await hashPassword(password);
+      // 管理者重設密碼後，使用者需再次於登入時自行更改
+      updateData.mustChangePassword = true;
+    }
 
     const target = await prisma.user.findFirst({
       where: { id, isActive: true },
@@ -120,6 +124,7 @@ export async function PATCH(
           region: true,
           title: true,
           managerId: true,
+          mustChangePassword: true,
           createdAt: true,
           updatedAt: true,
           manager: {

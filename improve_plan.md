@@ -52,6 +52,7 @@
 - [x] `ORDER_ADMIN` 權限模型調整為跨全市場商機支援（Deal/Contact/Lead scope 全域，可比照 GM 用 queryRegion 過濾），商機建立可比照 GM 指定區域；使用者管理與報表權限不變，96 項安全檢查通過。
 - [x] UI 現代化：共用 UI 元件庫（Button/Modal focus-trap/ConfirmDialog/Toast/EmptyState/ErrorBanner/SearchInput debounce/Field）、(app) route group server-side auth gate、登入頁脫離 app 殼層、route-level loading/error/not-found 邊界、401 自動導回登入、API 錯誤信封解析（含 422 欄位訊息）、全部頁面的 mutation 成功／失敗回饋。
 - [x] 商機看板改為真實 @dnd-kit 拖曳（樂觀更新＋失敗回滾＋DragOverlay＋下拉備援），移除換階段整頁重載；儀表板與報表改用 recharts 圖表（階段分佈、工單優先度、分市場長條圖、排行榜進度條），報表摘要文案改為數據驅動。
+- [x] 初始密碼生命週期治理：`User.mustChangePassword` 旗標（SQLite＋PostgreSQL migration）、管理者建立／重設密碼自動標記、`/api/auth/change-password`（驗證舊密碼、12+ 字元、不可與舊密相同、撤銷其他裝置）、未改密前受保護 API 一律 `403 PASSWORD_CHANGE_REQUIRED`、`/change-password` 強制改密頁與登入自動導向；安全整合測試與 Playwright E2E 均涵蓋此流程。
 
 **尚未解除的主要阻斷項**：Git history 機密清理與正式憑證輪替、MFA/SSO、外部 alert channel、正式 PostgreSQL cutover、registry/流量層自動 rollback、排程加密離機備份、擴充各核心流程的瀏覽器 E2E，以及集中式 logs/metrics/traces。
 

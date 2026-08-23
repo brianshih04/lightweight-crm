@@ -33,6 +33,21 @@ export async function requirePermission(
       response: apiError(request, 401, "UNAUTHENTICATED", "請先登入"),
     };
   }
+  // 初始密碼尚未更改者，僅能使用 /api/auth/change-password、/api/auth/me 與 /api/auth/logout
+  if (user.mustChangePassword) {
+    await recordAuditEvent({
+      request,
+      actor: user,
+      action,
+      resource,
+      result: "DENIED",
+      details: { reason: "PASSWORD_CHANGE_REQUIRED" },
+    });
+    return {
+      ok: false,
+      response: apiError(request, 403, "PASSWORD_CHANGE_REQUIRED", "首次登入需先更改密碼"),
+    };
+  }
   if (!hasPermission(user, resource, action)) {
     await recordAuditEvent({
       request,

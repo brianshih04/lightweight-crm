@@ -79,6 +79,7 @@ async function main() {
     data: {
       username: "admin",
       password: passwordHash,
+        mustChangePassword: true,
       name: "系統管理員 (Admin)",
       email: "admin@company.com",
       role: "ADMIN",
@@ -92,6 +93,7 @@ async function main() {
     data: {
       username: ORG_STRUCTURE.gm.username,
       password: passwordHash,
+        mustChangePassword: true,
       name: ORG_STRUCTURE.gm.name,
       email: "thomas@company.com",
       role: "GM",
@@ -105,6 +107,7 @@ async function main() {
     data: {
       username: ORG_STRUCTURE.marketingManager.username,
       password: passwordHash,
+        mustChangePassword: true,
       name: ORG_STRUCTURE.marketingManager.name,
       email: "thomas.mkt@company.com",
       role: "MARKETING_MANAGER",
@@ -120,6 +123,7 @@ async function main() {
       data: {
         username: team.manager.username,
         password: passwordHash,
+        mustChangePassword: true,
         name: team.manager.name,
         email: `${team.manager.username}@company.com`,
         role: "SALES_MANAGER",
@@ -135,6 +139,7 @@ async function main() {
         data: {
           username: rep.username,
           password: passwordHash,
+        mustChangePassword: true,
           name: rep.name,
           email: `${rep.username}@company.com`,
           role: "SALES",
@@ -152,6 +157,7 @@ async function main() {
       data: {
         username: orderAdmin.username,
         password: passwordHash,
+        mustChangePassword: true,
         name: orderAdmin.name,
         email: `${orderAdmin.username}@company.com`,
         role: "ORDER_ADMIN",
@@ -167,6 +173,7 @@ async function main() {
     data: {
       username: ORG_STRUCTURE.supportManager.username,
       password: passwordHash,
+        mustChangePassword: true,
       name: ORG_STRUCTURE.supportManager.name,
       email: "kidd@company.com",
       role: "SUPPORT",
@@ -181,6 +188,7 @@ async function main() {
     data: {
       username: ORG_STRUCTURE.planningManager.username,
       password: passwordHash,
+        mustChangePassword: true,
       name: ORG_STRUCTURE.planningManager.name,
       email: "kidd.planning@company.com",
       role: "MARKETING_MANAGER",

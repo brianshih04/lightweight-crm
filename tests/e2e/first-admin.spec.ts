@@ -56,6 +56,14 @@ test("first visitor must choose a password and becomes the only bootstrap ADMIN"
   await page.getByLabel("使用者帳號").fill("browser_gm");
   await page.getByLabel("密碼").fill("Browser-GM-Test!2026");
   await page.getByRole("button", { name: "立即登入系統" }).click();
+
+  // API 建立的使用者以初始密碼登入時，必須先完成強制改密
+  await page.waitForURL("/change-password");
+  await expect(page.getByRole("heading", { name: "首次登入：請設定您的新密碼" })).toBeVisible();
+  await page.getByLabel(/目前密碼/).fill("Browser-GM-Test!2026");
+  await page.getByLabel(/新密碼（至少/).fill("Browser-GM-Renew!2026");
+  await page.getByLabel(/確認新密碼/).fill("Browser-GM-Renew!2026");
+  await page.getByRole("button", { name: "設定新密碼並開始使用" }).click();
   await page.waitForURL("/");
   await expect(page.getByRole("link", { name: /安全稽核與告警/ })).toHaveCount(0);
   await page.goto("/settings/audit");

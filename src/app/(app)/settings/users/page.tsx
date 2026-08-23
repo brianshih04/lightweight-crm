@@ -328,7 +328,14 @@ export default function UsersManagementPage() {
                           </div>
                           <div>
                             <p className="font-bold text-slate-900">{user.name}</p>
-                            <p className="text-xs text-slate-400 font-mono">帳號: {user.username}</p>
+                            <p className="text-xs text-slate-400 font-mono">
+                              帳號: {user.username}
+                              {user.mustChangePassword && (
+                                <span className="ml-2 not-italic font-sans text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                  待首次改密
+                                </span>
+                              )}
+                            </p>
                           </div>
                         </div>
                       </td>

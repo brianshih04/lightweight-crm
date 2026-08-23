@@ -54,7 +54,8 @@ export default function LoginPage() {
         setError(data.error || (mode === "setup" ? "初始化失敗" : "登入失敗，請檢查帳號密碼"));
         return;
       }
-      window.location.href = "/";
+      // 使用初始密碼（或被管理者重設）者，先導向強制改密頁
+      window.location.href = data.user?.mustChangePassword ? "/change-password" : "/";
     } catch {
       setError("網路連線錯誤");
     } finally {

@@ -1,0 +1,112 @@
+name: lightweight-crm
+
+services:
+  database:
+    image: postgres:16.10-alpine@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crm}
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migrate:
+    image: ${CRM_APP_IMAGE:-lightweight-crm}:${CRM_IMAGE_TAG:-local}-migrator
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+    secrets:
+      - database_url
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  app:
+    image: ${CRM_APP_IMAGE:-lightweight-crm}:${CRM_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      APP_ORIGIN_FILE: /run/secrets/app_origin
+      AUDIT_HASH_SECRET_FILE: /run/secrets/audit_hash_secret
+    secrets:
+      - database_url
+      - app_origin
+      - audit_hash_secret
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+      - edge
+    ports:
+      - "127.0.0.1:${CRM_PORT:-3100}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    stop_grace_period: 20s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  postgres_password:
+    file: ${CRM_SECRETS_DIR:-./deploy/secrets}/postgres_password
+  database_url:
+    file: ${CRM_SECRETS_DIR:-./deploy/secrets}/database_url
+  app_origin:
+    file: ${CRM_SECRETS_DIR:-./deploy/secrets}/app_origin
+  audit_hash_secret:
+    file: ${CRM_SECRETS_DIR:-./deploy/secrets}/audit_hash_secret
+
+volumes:
+  postgres_data:
+
+networks:
+  backend:
+    internal: true
+  edge:

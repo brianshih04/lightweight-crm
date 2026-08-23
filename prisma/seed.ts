@@ -48,6 +48,12 @@ async function main() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("Destructive demo seed is disabled when NODE_ENV=production");
   }
+  // seed 會清除既有資料；必須明確確認，避免誤用在 staging 或保留資料的資料庫
+  if (process.env.DEMO_SEED_CONFIRM !== "1") {
+    throw new Error(
+      "Seed 會刪除資料庫中的所有既有資料。確認目標資料庫可被重設後，設定 DEMO_SEED_CONFIRM=1 再執行。"
+    );
+  }
   const demoPassword = process.env.DEMO_SEED_PASSWORD;
   const passwordError = validatePassword(demoPassword);
   if (!demoPassword || passwordError) {

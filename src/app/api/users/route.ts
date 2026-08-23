@@ -6,7 +6,7 @@ import { apiError, apiErrorFromUnknown, paginatedArrayResponse, parseJsonBody, p
 import { userCreateSchema, userListQuerySchema } from "@/lib/contracts";
 import { userListItemResponseSchema, userResponseSchema } from "@/lib/response-contracts";
 import { executeIdempotentMutation, replayIdempotentMutation } from "@/lib/idempotency";
-import { canManageUserRole, roleRequiresRegionalScope } from "@/lib/auth";
+import { canManageUserRole, MANAGER_ROLES, roleRequiresRegionalScope } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         where: {
           id: managerId,
           isActive: true,
-          role: { in: ["ADMIN", "GM", "MARKETING_MANAGER", "SALES_MANAGER"] },
+          role: { in: [...MANAGER_ROLES] },
           region: { in: ["ALL", effectiveRegion] },
         },
         select: { id: true, role: true },

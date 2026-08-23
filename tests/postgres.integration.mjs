@@ -171,6 +171,14 @@ async function main() {
   const salesCookie = login.cookie;
   assert.ok(salesCookie);
 
+  // API 建立的使用者須先完成首次改密，否則受保護 API 回 403 PASSWORD_CHANGE_REQUIRED
+  const changePassword = await request(baseUrl, "POST", "/api/auth/change-password", salesCookie, {
+    currentPassword: password,
+    newPassword: `${password}-pg`,
+    newPasswordConfirm: `${password}-pg`,
+  });
+  assert.equal(changePassword.status, 200, changePassword.text);
+
   const deal = await request(baseUrl, "POST", "/api/deals", salesCookie, {
     title: "PostgreSQL Decimal Deal",
     value: "1234.56",

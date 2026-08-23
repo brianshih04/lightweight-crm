@@ -308,6 +308,36 @@ async function main() {
   });
   assert.equal(redoChange.status, 200, redoChange.text);
 
+  // SUPPORT 可擔任 SUPPORT 的主管（客服部門內部階層）；但不可管理 Sales
+  const secondSupport = await request(baseUrl, "POST", "/api/users", adminCookie, {
+    username: "role_support_2",
+    password,
+    name: "Second Support",
+    email: "role-support-2@example.test",
+    role: "SUPPORT",
+    region: "ALL",
+    department: "客服部",
+    title: "客服專員",
+  });
+  assert.equal(secondSupport.status, 201, secondSupport.text);
+  const supportManagedBySupport = await request(
+    baseUrl,
+    "PATCH",
+    `/api/users/${createdUsers.get("role_support").id}`,
+    adminCookie,
+    { managerId: secondSupport.data.id }
+  );
+  assert.equal(supportManagedBySupport.status, 200, supportManagedBySupport.text);
+  const salesUnderSupport = await request(
+    baseUrl,
+    "PATCH",
+    `/api/users/${createdUsers.get("role_sales_n").id}`,
+    adminCookie,
+    { managerId: secondSupport.data.id }
+  );
+  assert.equal(salesUnderSupport.status, 422, salesUnderSupport.text);
+  assert.equal(salesUnderSupport.data.code, "INVALID_MANAGER_ROLE");
+
   const endpoints = [
     "/api/dashboard",
     "/api/accounts",
@@ -421,6 +451,35 @@ async function main() {
   assert.equal(deal.data.region, "NORTH");
   assert.equal(deal.data.assignedToId, northUser.id);
   assert.equal((await request(baseUrl, "PATCH", "/api/deals", centralCookie, { dealId: deal.data.id, status: "WON" })).status, 404);
+
+  // ORDER_ADMIN 為跨市場訂單支援：可讀寫其他市場的商機；Sales 仍被區域+負責人隔離
+  const centralDeal = await request(baseUrl, "POST", "/api/deals", centralCookie, {
+    title: "Central Market Deal",
+    value: "500",
+    pipelineId: "security-pipeline",
+    stageId: "security-stage",
+  });
+  assert.equal(centralDeal.status, 201, centralDeal.text);
+  assert.equal(centralDeal.data.region, "CENTRAL");
+
+  const orderAdminCentralList = await request(baseUrl, "GET", "/api/deals?region=CENTRAL", orderAdminCookie);
+  assert.equal(orderAdminCentralList.status, 200, orderAdminCentralList.text);
+  const centralDealTitles = orderAdminCentralList.data.activePipeline.stages
+    .flatMap((stage) => stage.deals.map((entry) => entry.title));
+  assert.equal(centralDealTitles.includes("Central Market Deal"), true, "訂單管理員應可跨市場讀取商機");
+
+  const orderAdminCrossPatch = await request(baseUrl, "PATCH", "/api/deals", orderAdminCookie, {
+    dealId: centralDeal.data.id,
+    stageId: "security-stage",
+    status: "OPEN",
+  });
+  assert.equal(orderAdminCrossPatch.status, 200, orderAdminCrossPatch.text);
+
+  const northSeesCentral = await request(baseUrl, "GET", "/api/deals?region=CENTRAL", northCookie);
+  assert.equal(northSeesCentral.status, 200, northSeesCentral.text);
+  const northTitles = northSeesCentral.data.activePipeline.stages
+    .flatMap((stage) => stage.deals.map((entry) => entry.title));
+  assert.equal(northTitles.includes("Central Market Deal"), false, "Sales 不可跨市場讀取商機");
 
   const northDashboard = await request(baseUrl, "GET", "/api/dashboard", northCookie);
   assert.equal(northDashboard.status, 200, northDashboard.text);

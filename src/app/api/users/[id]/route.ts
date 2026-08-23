@@ -7,7 +7,7 @@ import { apiError, apiErrorFromUnknown, apiSuccess, parseJsonBody } from "@/lib/
 import { userUpdateSchema } from "@/lib/contracts";
 import { successResponseSchema, userResponseSchema } from "@/lib/response-contracts";
 import { inspectManagerHierarchy, MAX_MANAGER_HIERARCHY_DEPTH } from "@/lib/user-hierarchy";
-import { canManageUserRole, roleRequiresRegionalScope } from "@/lib/auth";
+import { canManageUserRole, MANAGER_ROLES, roleRequiresRegionalScope } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +62,7 @@ export async function PATCH(
         where: {
           id: effectiveManagerId,
           isActive: true,
-          role: { in: ["ADMIN", "GM", "MARKETING_MANAGER", "SALES_MANAGER"] },
+          role: { in: [...MANAGER_ROLES] },
           region: { in: ["ALL", effectiveRegion] },
         },
         select: { id: true, role: true },
@@ -97,7 +97,7 @@ export async function PATCH(
     }
 
     const subordinateCount = await prisma.user.count({ where: { managerId: id, isActive: true } });
-    if (subordinateCount > 0 && !["ADMIN", "GM", "MARKETING_MANAGER", "SALES_MANAGER"].includes(effectiveRole)) {
+    if (subordinateCount > 0 && !(MANAGER_ROLES as readonly string[]).includes(effectiveRole)) {
       return apiError(request, 422, "MANAGER_HAS_SUBORDINATES", "請先重新指派下屬，再移除主管角色");
     }
     if (subordinateCount > 0 && effectiveRegion !== "ALL") {

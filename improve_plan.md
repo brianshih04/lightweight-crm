@@ -16,7 +16,7 @@
 - [x] Lead conversion、Contact/Activity、Deal/Activity、Ticket/Message 與 mutation AuditEvent 改為原子 transaction。
 - [x] Next.js 14.2.10 / React 18 升級至 Next.js 16.3.2 / React 19.2.8。
 - [x] `npm audit --omit=dev --audit-level=high`：0 vulnerabilities。
-- [x] 建立非互動 `npm run check`：lint、typecheck、20 unit tests、production build、security integration、dependency audit 全部通過。
+- [x] 建立非互動 `npm run check`：lint、typecheck、unit tests（目前 26+）、production build、security integration、dependency audit 全部通過。
 - [x] 安全整合測試：96 個角色端點判斷、匿名 401、四類 IDOR、工單內部筆記與 AuditEvent 持久性。
 - [x] 明確要求 Node.js 22.5+，確保 `npm run check` 的 `node:sqlite` 測試環境可重現。
 - [x] `.env`、`cookies.txt` 已加入 ignore 並從目前 Git index 移除；本機副本保留，另提供無秘密的 `.env.example`。

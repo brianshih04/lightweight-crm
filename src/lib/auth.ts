@@ -26,6 +26,8 @@ export interface SessionUser {
   mustChangePassword: boolean;
 }
 
+// 巢狀關聯（商機負責人、活動記錄人等）使用的公開欄位；
+// mustChangePassword 屬帳號管理狀態，僅在 auth/session 與 users API 的明確 select 中取得
 export const publicUserSelect = {
   id: true,
   username: true,
@@ -37,7 +39,6 @@ export const publicUserSelect = {
   region: true,
   title: true,
   managerId: true,
-  mustChangePassword: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -46,7 +47,7 @@ export const AUTH_COOKIE_NAME = "crm_auth_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
-function hashSessionToken(token: string): string {
+export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
@@ -95,21 +96,6 @@ export async function revokeCurrentSession(response: NextResponse): Promise<void
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   await prisma.authSession.updateMany({
     where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-}
-
-/** 撤銷使用者目前 cookie 以外的所有有效 Session（用於自行更改密碼後強制其他裝置重新登入） */
-export async function revokeOtherUserSessions(userId: string): Promise<void> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-  const currentTokenHash = token ? hashSessionToken(token) : null;
-  await prisma.authSession.updateMany({
-    where: {
-      userId,
-      revokedAt: null,
-      ...(currentTokenHash ? { tokenHash: { not: currentTokenHash } } : {}),
-    },
     data: { revokedAt: new Date() },
   });
 }
@@ -216,9 +202,14 @@ export function isOrderAdmin(user: SessionUser | null): boolean {
   return user.role === "ORDER_ADMIN";
 }
 
+// ORDER_ADMIN 的 region 僅作組織歸屬（如「總部與其他」），其 Deal/Contact/Lead
+// 權限為跨全市場支援（見 getDealScopeFilter 等函式），不受此區域限制。
 export function roleRequiresRegionalScope(role: string): boolean {
   return ["SALES_MANAGER", "SALES", "ORDER_ADMIN"].includes(role);
 }
+
+/** 可擔任直屬主管的角色（人員管理 API 驗證用；需與 canManageUserRole 保持一致） */
+export const MANAGER_ROLES = ["ADMIN", "GM", "MARKETING_MANAGER", "SALES_MANAGER", "SUPPORT"] as const;
 
 export function canManageUserRole(managerRole: string, subordinateRole: string): boolean {
   if (managerRole === "ADMIN" || managerRole === "GM") return true;

@@ -124,10 +124,11 @@ npm run start
 
 開啟瀏覽器造訪 `http://localhost:3000/login` 或受 Cloudflare Access 保護的正式 `/login`，依畫面設定首位 ADMIN 與密碼。
 
-如需在隔離的 demo DB 建立人員組織結構（角色、區域、主管階層）與標準銷售管線，可於啟動前自行提供 demo 密碼；seed 不會建立任何示範業務資料（客戶、商機、工單等）：
+如需在**可重設的** demo DB 建立人員組織結構（角色、區域、主管階層）與標準銷售管線，可於啟動前自行提供 demo 密碼；seed 會**清除該資料庫所有既有資料**（須設定 `DEMO_SEED_CONFIRM=1` 確認），且不會建立任何示範業務資料（客戶、商機、工單等）：
 
 ```powershell
 $env:DEMO_SEED_PASSWORD = Read-Host "Demo password" -MaskInput
+$env:DEMO_SEED_CONFIRM = "1"   # seed 會清除既有資料，需明確確認
 npm run db:seed
 ```
 

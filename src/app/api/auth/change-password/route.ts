@@ -1,7 +1,11 @@
-import { getCurrentUser, revokeOtherUserSessions } from "@/lib/auth";
+import { cookies } from "next/headers";
+import {
+  AUTH_COOKIE_NAME,
+  getCurrentUser,
+  hashSessionToken,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { verifyPassword } from "@/lib/password";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import { requireSameOrigin } from "@/lib/csrf";
 import { recordAuditEvent } from "@/lib/audit";
 import { apiError, apiErrorFromUnknown, apiSuccess, parseJsonBody } from "@/lib/api-response";
@@ -60,25 +64,42 @@ export async function POST(request: Request) {
       return apiError(request, 422, "PASSWORD_UNCHANGED", "新密碼不可與目前密碼相同");
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: await hashPassword(newPassword),
-        mustChangePassword: false,
-      },
-    });
+    // 密碼更新、撤銷其他裝置 Session 與稽核紀錄寫入同一 transaction
+    const cookieStore = await cookies();
+    const currentToken = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+    const currentTokenHash = currentToken ? hashSessionToken(currentToken) : null;
+    const newPasswordHash = await hashPassword(newPassword);
 
-    // 更改密碼後撤銷其他裝置的 Session；目前裝置保持登入
-    await revokeOtherUserSessions(user.id);
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          password: newPasswordHash,
+          mustChangePassword: false,
+        },
+      });
 
-    await recordAuditEvent({
-      request,
-      actor: user,
-      action: "update",
-      resource: "auth",
-      resourceId: user.id,
-      result: "SUCCESS",
-      details: { reason: "SELF_PASSWORD_CHANGE" },
+      await tx.authSession.updateMany({
+        where: {
+          userId: user.id,
+          revokedAt: null,
+          ...(currentTokenHash ? { tokenHash: { not: currentTokenHash } } : {}),
+        },
+        data: { revokedAt: new Date() },
+      });
+
+      await recordAuditEvent(
+        {
+          request,
+          actor: user,
+          action: "update",
+          resource: "auth",
+          resourceId: user.id,
+          result: "SUCCESS",
+          details: { reason: "SELF_PASSWORD_CHANGE" },
+        },
+        tx
+      );
     });
 
     return apiSuccess(request, successResponseSchema, { success: true });

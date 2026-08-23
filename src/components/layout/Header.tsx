@@ -45,7 +45,9 @@ export function Header() {
     }
   };
 
-  const isGM = currentUser?.role === "GM" || currentUser?.role === "ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN";
+  const isGM = currentUser?.role === "GM";
+  const isFullAccess = isAdmin || isGM;
   const userRegionLabel = REGIONS[currentUser?.region || "ALL"]?.label || "全區";
 
   return (
@@ -62,14 +64,24 @@ export function Header() {
         </div>
 
         {/* Region Indicator / Dropdown */}
-        {isGM ? (
-          <div className="hidden md:flex items-center gap-1.5 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1.5 rounded-lg text-xs">
-            <Award className="w-3.5 h-3.5 text-amber-600" />
-            <span className="text-[11px] font-bold text-amber-800">總經理全區視角：</span>
+        {isFullAccess ? (
+          <div className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border ${
+            isAdmin ? "bg-red-50/80 border-red-200/80" : "bg-amber-50/80 border-amber-200/80"
+          }`}>
+            {isAdmin ? (
+              <Shield className="w-3.5 h-3.5 text-red-600" />
+            ) : (
+              <Award className="w-3.5 h-3.5 text-amber-600" />
+            )}
+            <span className={`text-[11px] font-bold ${isAdmin ? "text-red-800" : "text-amber-800"}`}>
+              {isAdmin ? "系統管理者全區視角：" : "總經理全區視角："}
+            </span>
             <select
               value={selectedRegion}
               onChange={(e) => setSelectedRegion(e.target.value)}
-              className="bg-transparent text-amber-900 font-semibold focus:outline-none cursor-pointer"
+              className={`bg-transparent font-semibold focus:outline-none cursor-pointer ${
+                isAdmin ? "text-red-900" : "text-amber-900"
+              }`}
             >
               {Object.entries(REGIONS).map(([k, r]) => (
                 <option key={k} value={k}>
@@ -95,7 +107,7 @@ export function Header() {
             className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-slate-100 border border-slate-200 transition text-xs"
           >
             <div className={`w-7 h-7 rounded-lg font-bold flex items-center justify-center text-xs text-white ${
-              isGM ? "bg-amber-600" : "bg-indigo-600"
+              isAdmin ? "bg-rose-600" : isGM ? "bg-amber-600" : "bg-indigo-600"
             }`}>
               {currentUser ? currentUser.name.slice(0, 1) : "U"}
             </div>
@@ -103,9 +115,13 @@ export function Header() {
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-slate-900">{currentUser ? currentUser.name : "登入中..."}</span>
                 <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
-                  isGM ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                  isAdmin
+                    ? "bg-red-100 text-red-800 border-red-200"
+                    : isGM
+                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                    : "bg-indigo-50 text-indigo-700 border-indigo-200"
                 }`}>
-                  {currentUser?.role === "GM" ? "總經理" : currentUser?.role === "SALES_MANAGER" ? "業務主管" : "業務代表"}
+                  {isAdmin ? "系統管理者" : isGM ? "總經理" : currentUser?.role === "SALES_MANAGER" ? "業務主管" : "業務代表"}
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 block leading-tight">
@@ -122,11 +138,22 @@ export function Header() {
                 <p className="font-bold text-slate-900">{currentUser?.name}</p>
                 <p className="text-slate-500 text-[11px]">{currentUser?.email}</p>
                 <div className="mt-1 pt-1 border-t border-slate-200/60 text-[10px] text-slate-400">
-                  責任範圍：{userRegionLabel}
+                  角色權限：{isAdmin ? "系統管理者 (Admin)" : isGM ? "總經理 (GM)" : currentUser?.role}
                 </div>
               </div>
 
               <div className="space-y-1">
+                {isAdmin && (
+                  <Link
+                    href="/settings/users"
+                    onClick={() => setShowUserMenu(false)}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition"
+                  >
+                    <Shield className="w-4 h-4 text-red-600" />
+                    <span>人員與區域管理 (Admin)</span>
+                  </Link>
+                )}
+
                 <Link
                   href="/login"
                   onClick={() => setShowUserMenu(false)}

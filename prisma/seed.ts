@@ -21,11 +21,25 @@ async function main() {
   await prisma.user.deleteMany({});
 
   console.log("🌱 Seeding Multi-User Hierarchy & Passwords...");
-  // 1. General Manager (總經理) - Admin & Full Access
-  const gmUser = await prisma.user.create({
+  // 1. System Administrator (系統管理員)
+  const adminUser = await prisma.user.create({
     data: {
       username: "admin",
       password: "Avi22099759",
+      name: "系統管理員 (Admin)",
+      email: "admin@company.com",
+      role: "ADMIN",
+      department: "資訊管理部",
+      region: "ALL",
+      title: "系統管理員 (System Admin)",
+    },
+  });
+
+  // 2. General Manager (總經理 - 獨立專屬帳號)
+  const gmUser = await prisma.user.create({
+    data: {
+      username: "peter_gm",
+      password: "peter123",
       name: "柯博文 (Peter)",
       email: "peter.gm@company.com",
       role: "GM",
@@ -35,7 +49,7 @@ async function main() {
     },
   });
 
-  // 2. Regional Sales Manager (北部業務主管)
+  // 3. Regional Sales Manager (北部業務主管)
   const salesNorthMgr = await prisma.user.create({
     data: {
       username: "alice_mgr",
@@ -50,7 +64,7 @@ async function main() {
     },
   });
 
-  // 3. Subordinate Sales Reps
+  // 4. Subordinate Sales Reps
   const salesNorthRep = await prisma.user.create({
     data: {
       username: "kevin_sales",
@@ -107,7 +121,7 @@ async function main() {
     },
   });
 
-  // 4. Marketing & Customer Support
+  // 5. Marketing & Customer Support
   const mktCarol = await prisma.user.create({
     data: {
       username: "carol_mkt",

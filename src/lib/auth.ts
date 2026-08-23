@@ -28,9 +28,9 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     }
   }
 
-  // Fallback to default Admin / GM user
+  // Fallback to default Admin user
   const adminUser = await prisma.user.findFirst({
-    where: { role: "GM" },
+    where: { role: "ADMIN" },
   });
 
   if (adminUser) {
@@ -50,6 +50,16 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   return null;
 }
 
+export function isAdmin(user: SessionUser | null): boolean {
+  if (!user) return false;
+  return user.role === "ADMIN";
+}
+
+export function isGM(user: SessionUser | null): boolean {
+  if (!user) return false;
+  return user.role === "GM";
+}
+
 export function isGMOrAdmin(user: SessionUser | null): boolean {
   if (!user) return false;
   return user.role === "ADMIN" || user.role === "GM";
@@ -67,7 +77,7 @@ export function isSalesRep(user: SessionUser | null): boolean {
 
 /**
  * Deal Scope Filter:
- * - GM / Admin: Sees ALL regions (or queryRegion if user clicks filter)
+ * - Admin & GM: Sees ALL regions (or queryRegion if filter selected)
  * - Sales Manager: Sees ALL deals in their Region (including all subordinate Sales reps)
  * - Sales Rep: Sees deals assigned to them or in their specific assigned Region
  */
@@ -97,7 +107,7 @@ export function getDealScopeFilter(user: SessionUser | null, queryRegion?: strin
 
 /**
  * Contact & Account Scope Filter:
- * - GM / Admin: Sees ALL
+ * - Admin & GM: Sees ALL
  * - Sales Manager & Sales: Sees their Region
  */
 export function getEntityScopeFilter(user: SessionUser | null, queryRegion?: string | null) {
@@ -113,7 +123,7 @@ export function getEntityScopeFilter(user: SessionUser | null, queryRegion?: str
 
 /**
  * Lead Scope Filter:
- * - GM / Admin: All leads
+ * - Admin & GM: All leads
  * - Sales Manager: All leads in Region
  * - Sales: Leads assigned to them in Region
  */

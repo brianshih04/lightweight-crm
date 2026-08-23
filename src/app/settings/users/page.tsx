@@ -175,7 +175,9 @@ export default function UsersManagementPage() {
     }
   };
 
-  const isGM = currentUser?.role === "GM" || currentUser?.role === "ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN";
+  const isGM = currentUser?.role === "GM";
+  const isFullManager = isAdmin || isGM;
 
   const managers = users.filter((u) => u.role === "GM" || u.role === "SALES_MANAGER" || u.role === "ADMIN");
   const filteredUsers = filterRegion === "ALL" ? users : users.filter((u) => u.region === filterRegion);
@@ -186,21 +188,21 @@ export default function UsersManagementPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-amber-500 text-white flex items-center gap-1">
+            <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-red-600 text-white flex items-center gap-1">
               <Shield className="w-3.5 h-3.5" /> 系統管理員權限
             </span>
-            <span className="text-xs text-slate-400">組織架構與區域分配</span>
+            <span className="text-xs text-slate-400">組織人員與責任區域配置</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 flex items-center gap-2.5">
             <Users className="w-6 h-6 text-indigo-600" />
             人員帳號與負責區域管理 (Personnel & Territory Management)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Admin 可在此建立所有成員帳號、分配各 Sales 負責區域、指派主管匯報階層與設定登入密碼。
+            Admin 系統管理者可在此建立所有成員帳號、分配各 Sales 負責區域、指派主管匯報階層與管理登入密碼。
           </p>
         </div>
 
-        {isGM && (
+        {isFullManager && (
           <button
             onClick={() => setShowAddModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm shadow-indigo-600/20 transition"
@@ -270,7 +272,8 @@ export default function UsersManagementPage() {
               <tbody className="divide-y divide-slate-100">
                 {filteredUsers.map((user) => {
                   const regConfig = REGIONS[user.region] || { label: user.region, badge: "bg-slate-100" };
-                  const isUserGM = user.role === "GM" || user.role === "ADMIN";
+                  const isUserAdmin = user.role === "ADMIN";
+                  const isUserGM = user.role === "GM";
                   const isUserMgr = user.role === "SALES_MANAGER";
 
                   return (
@@ -279,7 +282,13 @@ export default function UsersManagementPage() {
                         <div className="flex items-center gap-3">
                           <div
                             className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-xs text-white ${
-                              isUserGM ? "bg-amber-600" : isUserMgr ? "bg-indigo-600" : "bg-slate-600"
+                              isUserAdmin
+                                ? "bg-rose-600"
+                                : isUserGM
+                                ? "bg-amber-600"
+                                : isUserMgr
+                                ? "bg-indigo-600"
+                                : "bg-slate-600"
                             }`}
                           >
                             {user.name.slice(0, 1)}
@@ -297,9 +306,13 @@ export default function UsersManagementPage() {
                       </td>
 
                       <td className="px-6 py-4">
-                        {isUserGM ? (
+                        {isUserAdmin ? (
+                          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
+                            <Shield className="w-3 h-3 text-rose-600" /> 系統管理員 (Admin)
+                          </span>
+                        ) : isUserGM ? (
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
-                            <Award className="w-3 h-3" /> 總經理 (全權限)
+                            <Award className="w-3 h-3 text-amber-600" /> 總經理 (GM)
                           </span>
                         ) : isUserMgr ? (
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
@@ -334,7 +347,7 @@ export default function UsersManagementPage() {
                       </td>
 
                       <td className="px-6 py-4 text-right space-x-2">
-                        {isGM && (
+                        {isFullManager && (
                           <>
                             <button
                               onClick={() => handleOpenEdit(user)}
@@ -343,7 +356,7 @@ export default function UsersManagementPage() {
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            {!isUserGM && (
+                            {!isUserAdmin && (
                               <button
                                 onClick={() => handleDeleteUser(user)}
                                 className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-rose-600 rounded-lg transition"
@@ -371,7 +384,7 @@ export default function UsersManagementPage() {
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-indigo-600" />
-                建立新成員帳號與分配區域
+                建立新成員帳號與分配責任區域
               </h2>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
                 <X className="w-5 h-5" />
@@ -453,7 +466,8 @@ export default function UsersManagementPage() {
                   >
                     <option value="SALES">業務代表 (Sales Rep - 僅限負責區域)</option>
                     <option value="SALES_MANAGER">業務處主管 (Sales Manager - 管轄全區業務)</option>
-                    <option value="GM">總經理 (GM - 全區全權限)</option>
+                    <option value="GM">總經理 (GM - 全域決策分析)</option>
+                    <option value="ADMIN">系統管理員 (Admin - 系統全管理)</option>
                     <option value="MARKETING">行銷專員 (Marketing)</option>
                     <option value="SUPPORT">客服專員 (Customer Support)</option>
                   </select>
@@ -587,6 +601,7 @@ export default function UsersManagementPage() {
                     <option value="SALES">業務代表 (Sales)</option>
                     <option value="SALES_MANAGER">業務處主管 (Sales Manager)</option>
                     <option value="GM">總經理 (GM)</option>
+                    <option value="ADMIN">系統管理員 (Admin)</option>
                     <option value="MARKETING">行銷專員</option>
                     <option value="SUPPORT">客服專員</option>
                   </select>

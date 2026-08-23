@@ -18,6 +18,8 @@ import {
   LucideIcon,
   LogOut,
   UserCog,
+  Shield,
+  Award,
 } from "lucide-react";
 import { cn, REGIONS } from "@/lib/utils";
 
@@ -40,7 +42,7 @@ const navigation: NavSection[] = [
     items: [
       { name: "總覽儀表板", href: "/dashboard", icon: LayoutDashboard },
       { name: "總經理決策報表", href: "/reports", icon: FileText, badge: "GM / 主管", minRole: ["GM", "ADMIN", "SALES_MANAGER"] },
-      { name: "人員與區域管理", href: "/settings/users", icon: UserCog, badge: "Admin 專用", minRole: ["GM", "ADMIN"] },
+      { name: "人員與區域管理", href: "/settings/users", icon: UserCog, badge: "Admin 專用", minRole: ["ADMIN", "GM"] },
     ],
   },
   {
@@ -96,7 +98,8 @@ export function Sidebar() {
     }
   };
 
-  const isGM = currentUser?.role === "GM" || currentUser?.role === "ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN";
+  const isGM = currentUser?.role === "GM";
   const userRegionLabel = REGIONS[currentUser?.region || "ALL"]?.label?.split(" ")[0] || "全區";
 
   return (
@@ -168,14 +171,20 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-800">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center text-xs text-white shrink-0 ${
-              isGM ? "bg-amber-600" : "bg-indigo-600"
+              isAdmin ? "bg-rose-600" : isGM ? "bg-amber-600" : "bg-indigo-600"
             }`}>
               {currentUser ? currentUser.name.slice(0, 1) : "U"}
             </div>
             <div className="text-left min-w-0">
               <p className="text-xs font-semibold text-slate-200 truncate">{currentUser ? currentUser.name : "使用者"}</p>
               <p className="text-[10px] text-indigo-300 truncate">
-                {currentUser?.role === "GM" ? "總經理 (全區)" : currentUser?.role === "SALES_MANAGER" ? `主管 · ${userRegionLabel}` : `業務 · ${userRegionLabel}`}
+                {isAdmin
+                  ? "系統管理員 (Admin)"
+                  : isGM
+                  ? "總經理 (全區業務)"
+                  : currentUser?.role === "SALES_MANAGER"
+                  ? `主管 · ${userRegionLabel}`
+                  : `業務 · ${userRegionLabel}`}
               </p>
             </div>
           </div>

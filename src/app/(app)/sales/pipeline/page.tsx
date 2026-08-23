@@ -1,21 +1,21 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { KanbanSquare, Plus } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+import { apiErrorMessage, apiFetch, fetchAllPages, fetchApiResponse } from "@/lib/api-client";
+import { PipelineBoard, type BoardStage } from "@/components/sales/PipelineBoard";
 import {
-  KanbanSquare,
-  Plus,
-  DollarSign,
-  Calendar,
-  Building2,
-  User,
-  ChevronRight,
-  MoreVertical,
-  X,
-  CheckCircle2,
-  XCircle,
-} from "lucide-react";
-import { formatCurrency, STAGE_COLORS } from "@/lib/utils";
-import { fetchAllPages } from "@/lib/api-client";
+  Button,
+  ErrorBanner,
+  Field,
+  inputClassName,
+  LoadMoreButton,
+  Modal,
+  PageHeader,
+  PageLoader,
+  useToast,
+} from "@/components/ui";
 
 function mergePipelinePage(current: any, incoming: any) {
   const mergeOne = (existing: any, page: any) => ({
@@ -34,13 +34,45 @@ function mergePipelinePage(current: any, incoming: any) {
       const nextPipeline = incoming.pipelines.find((candidate: any) => candidate.id === pipeline.id);
       return nextPipeline ? mergeOne(pipeline, nextPipeline) : pipeline;
     }),
-    activePipeline: current.activePipeline && incoming.activePipeline
-      ? mergeOne(current.activePipeline, incoming.activePipeline)
-      : incoming.activePipeline || current.activePipeline,
+    activePipeline:
+      current.activePipeline && incoming.activePipeline
+        ? mergeOne(current.activePipeline, incoming.activePipeline)
+        : incoming.activePipeline || current.activePipeline,
+  };
+}
+
+/** 由目標階段名稱推導商機狀態（贏單/輸單/進行中），與 API 合約一致 */
+function statusForStage(stageName: string): string {
+  if (stageName.includes("贏單") || stageName.includes("Won")) return "WON";
+  if (stageName.includes("輸單") || stageName.includes("Lost")) return "LOST";
+  return "OPEN";
+}
+
+/** 樂觀地把商機搬到目標階段，回傳新的 pipelineData */
+function moveDealOptimistically(data: any, dealId: string, targetStageId: string) {
+  let movedDeal: any = null;
+  const stagesWithoutDeal = data.activePipeline.stages.map((stage: any) => {
+    const found = stage.deals.find((deal: any) => deal.id === dealId);
+    if (found) movedDeal = found;
+    return { ...stage, deals: stage.deals.filter((deal: any) => deal.id !== dealId) };
+  });
+
+  if (!movedDeal) return data;
+
+  const stages = stagesWithoutDeal.map((stage: any) =>
+    stage.id === targetStageId
+      ? { ...stage, deals: [...stage.deals, { ...movedDeal, stageId: targetStageId }] }
+      : stage
+  );
+
+  return {
+    ...data,
+    activePipeline: { ...data.activePipeline, stages },
   };
 }
 
 export default function SalesPipelinePage() {
+  const toast = useToast();
   const [pipelineData, setPipelineData] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -49,6 +81,7 @@ export default function SalesPipelinePage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [movingDealId, setMovingDealId] = useState<string | null>(null);
 
   // New Deal Form State
   const [title, setTitle] = useState("");
@@ -59,49 +92,64 @@ export default function SalesPipelinePage() {
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  const fetchPipeline = async (cursor?: string) => {
+  const fetchPipeline = useCallback(async (cursor?: string) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/deals?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
-      if (!response.ok) throw new Error(`Deals request failed: ${response.status}`);
+      const response = await fetchApiResponse(
+        `/api/deals?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      );
       const data = await response.json();
       setNextCursor(response.headers.get("X-Next-Cursor"));
-      setPipelineData((current: any) => cursor && current ? mergePipelinePage(current, data) : data);
-      if (data.activePipeline?.stages?.length > 0 && !stageId) {
-        setStageId(data.activePipeline.stages[0].id);
+      setPipelineData((current: any) =>
+        cursor && current ? mergePipelinePage(current, data) : data
+      );
+      if (data.activePipeline?.stages?.length > 0) {
+        setStageId((current) => current || data.activePipeline.stages[0].id);
       }
     } catch (error) {
       console.error(error);
-      setLoadError("無法載入商機看板，請稍後再試。");
+      setLoadError(apiErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchPipeline();
     fetchAllPages<any>("/api/contacts").then(setContacts).catch(console.error);
     fetchAllPages<any>("/api/accounts").then(setAccounts).catch(console.error);
-  }, []);
+  }, [fetchPipeline]);
 
-  const handleStageChange = async (dealId: string, targetStageId: string, targetStageName: string) => {
+  const handleMoveDeal = async (dealId: string, targetStageId: string) => {
+    const snapshot = pipelineData;
+    const targetStage = snapshot?.activePipeline?.stages?.find((s: any) => s.id === targetStageId);
+    if (!targetStage) return;
+
+    setMovingDealId(dealId);
+    setPipelineData((current: any) => moveDealOptimistically(current, dealId, targetStageId));
+
     try {
-      let status = "OPEN";
-      if (targetStageName.includes("贏單") || targetStageName.includes("Won")) status = "WON";
-      if (targetStageName.includes("輸單") || targetStageName.includes("Lost")) status = "LOST";
-
-      await fetch("/api/deals", {
+      await apiFetch("/api/deals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, stageId: targetStageId, status }),
+        body: JSON.stringify({
+          dealId,
+          stageId: targetStageId,
+          status: statusForStage(targetStage.name),
+        }),
       });
-      fetchPipeline();
+      // 樂觀更新已反映結果，成功時不需重新載入整個看板
     } catch (err) {
       console.error(err);
+      setPipelineData(snapshot);
+      toast.error(`商機階段移動失敗：${apiErrorMessage(err)}`);
+    } finally {
+      setMovingDealId(null);
     }
   };
 
@@ -109,8 +157,9 @@ export default function SalesPipelinePage() {
     e.preventDefault();
     if (!title || !pipelineData?.activePipeline?.id) return;
     setSubmitting(true);
+    setFormError("");
     try {
-      const res = await fetch("/api/deals", {
+      await apiFetch("/api/deals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -124,294 +173,156 @@ export default function SalesPipelinePage() {
           notes,
         }),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setTitle("");
-        setValue("");
-        setContactId("");
-        setAccountId("");
-        setExpectedCloseDate("");
-        setNotes("");
-        fetchPipeline();
-      }
+      setShowModal(false);
+      setTitle("");
+      setValue("");
+      setContactId("");
+      setAccountId("");
+      setExpectedCloseDate("");
+      toast.success(`已建立商機「${title}」`);
+      fetchPipeline();
     } catch (err) {
       console.error(err);
+      setFormError(apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-3 text-slate-500 text-sm">
-          <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-          載入銷售商機看板中...
-        </div>
-      </div>
-    );
+    return <PageLoader label="載入銷售商機看板中..." />;
   }
 
-  const stages = pipelineData?.activePipeline?.stages || [];
+  const stages: BoardStage[] = pipelineData?.activePipeline?.stages || [];
   const totalPipelineValue = stages.reduce(
-    (sum: number, s: any) => sum + s.deals.reduce((dSum: number, d: any) => dSum + d.value, 0),
+    (sum, stage) => sum + stage.deals.reduce((dealSum, deal) => dealSum + deal.value, 0),
     0
   );
 
   return (
     <div className="space-y-6">
-      {/* Kanban Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <KanbanSquare className="w-6 h-6 text-indigo-600" />
-            商機銷售看板 (Sales Kanban)
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            已載入商機總值：<strong className="text-indigo-600 font-semibold">{formatCurrency(totalPipelineValue)}</strong> · 視覺化推動各階段成交進展。
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm shadow-indigo-600/20 transition"
-        >
+      <PageHeader
+        icon={KanbanSquare}
+        title="商機銷售看板 (Sales Kanban)"
+        description={
+          stages.length > 0 ? (
+            <>
+              已載入商機總值：<strong className="text-indigo-600 font-semibold">{formatCurrency(totalPipelineValue)}</strong>
+              {" · "}拖曳卡片或使用卡片選單推動各階段成交進展。
+            </>
+          ) : (
+            "拖曳卡片推動各階段成交進展。"
+          )
+        }
+      >
+        <Button onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" />
           <span>建立新商機</span>
-        </button>
-      </div>
+        </Button>
+      </PageHeader>
 
-      {/* Kanban Columns Horizontal Scroll Area */}
-      <div className="flex gap-5 overflow-x-auto pb-6 items-start">
-        {stages.map((stage: any) => {
-          const stageTotal = stage.deals.reduce((sum: number, d: any) => sum + d.value, 0);
-          return (
-            <div
-              key={stage.id}
-              className="w-80 shrink-0 bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col max-h-[calc(100vh-220px)]"
-            >
-              {/* Column Header */}
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color }} />
-                  <span className="font-bold text-slate-800 text-sm">{stage.name}</span>
-                  <span className="text-xs bg-slate-200 text-slate-700 font-semibold px-2 py-0.5 rounded-full">
-                    {stage.deals.length}
-                  </span>
-                </div>
-                <span className="text-xs font-bold text-slate-600">
-                  {formatCurrency(stageTotal)}
-                </span>
-              </div>
+      {loadError && <ErrorBanner message={loadError} onRetry={() => fetchPipeline()} />}
 
-              {/* Deal Cards Stream */}
-              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-                {stage.deals.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
-                    暫無商機
-                  </div>
-                ) : (
-                  stage.deals.map((deal: any) => (
-                    <div
-                      key={deal.id}
-                      className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition space-y-3"
-                    >
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm leading-snug">{deal.title}</h4>
-                        <div className="flex items-center gap-1 text-base font-bold text-indigo-600 mt-1">
-                          <DollarSign className="w-4 h-4 -mr-1" />
-                          <span>{formatCurrency(deal.value)}</span>
-                        </div>
-                      </div>
+      <PipelineBoard stages={stages} onMoveDeal={handleMoveDeal} movingDealId={movingDealId} />
 
-                      <div className="space-y-1.5 text-xs text-slate-500 pt-2 border-t border-slate-100">
-                        {deal.account && (
-                          <div className="flex items-center gap-1.5 truncate">
-                            <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{deal.account.name}</span>
-                          </div>
-                        )}
-                        {deal.contact && (
-                          <div className="flex items-center gap-1.5 truncate">
-                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{deal.contact.name} ({deal.contact.title || "聯絡人"})</span>
-                          </div>
-                        )}
-                        {deal.expectedCloseDate && (
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>預計結案：{new Date(deal.expectedCloseDate).toLocaleDateString()}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Quick Move Stage Selector */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400">移動階段：</span>
-                        <select
-                          value={deal.stageId}
-                          onChange={(e) => {
-                            const target = stages.find((s: any) => s.id === e.target.value);
-                            if (target) handleStageChange(deal.id, target.id, target.name);
-                          }}
-                          className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
-                        >
-                          {stages.map((st: any) => (
-                            <option key={st.id} value={st.id}>
-                              {st.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {loadError && <p role="alert" className="text-sm text-rose-600 text-center">{loadError}</p>}
       {nextCursor && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => fetchPipeline(nextCursor)}
-            disabled={loadingMore}
-            className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-60"
-          >
-            {loadingMore ? "載入中..." : "載入更多商機"}
-          </button>
-        </div>
+        <LoadMoreButton loading={loadingMore} onClick={() => fetchPipeline(nextCursor!)} label="載入更多商機" />
       )}
 
       {/* Create Deal Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">建立新商機 (New Deal)</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                <X className="w-5 h-5" />
-              </button>
+        <Modal title="建立新商機 (New Deal)" onClose={() => setShowModal(false)}>
+          <form onSubmit={handleCreateDeal} className="space-y-4 text-sm">
+            {formError && (
+              <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                {formError}
+              </p>
+            )}
+
+            <Field label="商機名稱" required>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="例如：宏威科技 - CRM 系統擴充採購案"
+                className={inputClassName}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="預估金額 (TWD)">
+                <input
+                  type="number"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="500000"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="初始階段">
+                <select value={stageId} onChange={(e) => setStageId(e.target.value)} className={inputClassName}>
+                  {stages.map((stage) => (
+                    <option key={stage.id} value={stage.id}>
+                      {stage.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
 
-            <form onSubmit={handleCreateDeal} className="mt-4 space-y-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  商機名稱 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="例如：宏威科技 - CRM 系統擴充採購案"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20"
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="關聯企業客戶">
+                <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={inputClassName}>
+                  <option value="">選擇企業 (可選)</option>
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="主要聯絡人">
+                <select value={contactId} onChange={(e) => setContactId(e.target.value)} className={inputClassName}>
+                  <option value="">選擇聯絡人 (可選)</option>
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.title || "聯絡人"})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">預估金額 (TWD)</label>
-                  <input
-                    type="number"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder="500000"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">初始階段</label>
-                  <select
-                    value={stageId}
-                    onChange={(e) => setStageId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    {stages.map((st: any) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            <Field label="預計結案日期">
+              <input
+                type="date"
+                value={expectedCloseDate}
+                onChange={(e) => setExpectedCloseDate(e.target.value)}
+                className={inputClassName}
+              />
+            </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">關聯企業客戶</label>
-                  <select
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    <option value="">選擇企業 (可選)</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">主要聯絡人</label>
-                  <select
-                    value={contactId}
-                    onChange={(e) => setContactId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 bg-white"
-                  >
-                    <option value="">選擇聯絡人 (可選)</option>
-                    {contacts.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.title || "聯絡人"})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            <Field label="商機備註 / 需求說明">
+              <textarea
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="輸入客戶預算、重要決策里程碑或跟進事項..."
+                className={`${inputClassName} resize-none`}
+              />
+            </Field>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">預計結案日期</label>
-                <input
-                  type="date"
-                  value={expectedCloseDate}
-                  onChange={(e) => setExpectedCloseDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">商機備註 / 需求說明</label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="輸入客戶預算、重要決策里程碑或跟進事項..."
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 resize-none"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium rounded-lg"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm"
-                >
-                  {submitting ? "建立中..." : "確認建立"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>
+                取消
+              </Button>
+              <Button type="submit" loading={submitting}>
+                {submitting ? "建立中..." : "確認建立"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

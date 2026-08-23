@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: false,
+  reactStrictMode: true,
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" } : {}),
 };
 
 export default nextConfig;

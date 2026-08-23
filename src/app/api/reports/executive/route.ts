@@ -112,10 +112,10 @@ export async function GET(request: Request) {
     // 4. Regional Breakdown (For GM sees all 4 regions; For Sales Manager sees their region)
     const regionKeys = isSalesManager(user) && user ? [user.region] : ["NORTH", "CENTRAL", "SOUTH", "OVERSEAS"];
     const regionNames: Record<string, string> = {
-      NORTH: "北部區域 (台北/新竹)",
-      CENTRAL: "中部區域 (台中/彰化)",
-      SOUTH: "南部區域 (高雄/台南)",
-      OVERSEAS: "海外亞太區",
+      NORTH: "第一市場 (中南美/菲律賓)",
+      CENTRAL: "第二市場 (美歐/俄印/台灣)",
+      SOUTH: "第三市場 (俄羅斯/中東)",
+      OVERSEAS: "總部與其他",
     };
 
     const regionalBreakdown = regionKeys.map((reg) => {
@@ -171,10 +171,10 @@ export async function GET(request: Request) {
     const executiveTakeaways = [
       {
         type: "HIGHLIGHT",
-        title: isSalesManager(user) && user ? `${regionNames[user.region]}業務推進摘要` : "南部與中部區域贏單表現亮眼",
+        title: isSalesManager(user) && user ? `${regionNames[user.region]}業務推進摘要` : "本季營收達成進度",
         content: isSalesManager(user)
           ? `本區目前已完成贏單與進行中商機累積達 ${(totalWonValue + totalPipelineValue).toLocaleString()} 元，下屬業務跟進順暢。`
-          : `鼎盛新零售 (185萬) 與高雄港灣物流 (95萬) 已順利結案，帶動 Q3 成交金額累積達 ${totalWonValue.toLocaleString()} 元。`,
+          : `本季已成交金額累計 ${totalWonValue.toLocaleString()} 元（達成率 ${targetAchievementRate}%），另有商機儲備 ${totalPipelineValue.toLocaleString()} 元持續推進。`,
       },
       {
         type: "OPPORTUNITY",

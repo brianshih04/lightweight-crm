@@ -36,10 +36,10 @@ const ROLE_OPTIONS = [
 ];
 
 const REGION_OPTIONS = [
-  { value: "NORTH", label: "北部區域 (台北/新竹)" },
-  { value: "CENTRAL", label: "中部區域 (台中/彰化)" },
-  { value: "SOUTH", label: "南部區域 (高雄/台南)" },
-  { value: "OVERSEAS", label: "海外與亞太區" },
+  { value: "NORTH", label: "第一市場 (中南美/菲律賓)" },
+  { value: "CENTRAL", label: "第二市場 (美歐/俄印/台灣)" },
+  { value: "SOUTH", label: "第三市場 (俄羅斯/中東)" },
+  { value: "OVERSEAS", label: "總部與其他" },
   { value: "ALL", label: "全區 / 總部 (ALL)" },
 ];
 

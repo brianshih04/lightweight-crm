@@ -3,8 +3,10 @@ import { hashPassword, validatePassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
 
-// 實際組織結構：全體行銷業務皆為海外市場，實際負責市場記錄於 title。
-// 訂單管理員為支援單位，組織掛在市場部主管（thomas_mkt）之下。
+// 實際組織結構：三個行銷部對應三個市場區域（台灣併入第二市場）。
+// 區域槽位對應：NORTH=第一市場(中南美/菲律賓)、CENTRAL=第二市場(美歐/俄印/台灣)、
+// SOUTH=第三市場(俄羅斯/中東)、OVERSEAS=總部與其他（訂單管理員等支援單位）。
+// 訂單管理員為支援單位，商機權限為全市場，掛在市場部主管（thomas_mkt）之下。
 const ORG_STRUCTURE = {
   gm: { username: "thomas", name: "Thomas", department: "總經理室", title: "總經理 (GM)" },
   marketingManager: {
@@ -17,16 +19,19 @@ const ORG_STRUCTURE = {
     {
       manager: { username: "ivan", name: "Ivan", title: "第一行銷部主管（中南美／菲律賓）" },
       department: "第一行銷部",
+      region: "NORTH",
       reps: [{ username: "maite", name: "Maite", title: "行銷業務專員（中南美／菲律賓）" }],
     },
     {
-      manager: { username: "jane", name: "Jane", title: "第二行銷部主管（美國／歐洲／俄羅斯 OBM／印度 TVS-E）" },
+      manager: { username: "jane", name: "Jane", title: "第二行銷部主管（美國／歐洲／俄羅斯 OBM／印度 TVS-E／台灣）" },
       department: "第二行銷部",
-      reps: [{ username: "lauren", name: "Lauren", title: "行銷業務專員（美國／歐洲／俄羅斯 OBM／印度 TVS-E）" }],
+      region: "CENTRAL",
+      reps: [{ username: "lauren", name: "Lauren", title: "行銷業務專員（美國／歐洲／俄羅斯 OBM／印度 TVS-E／台灣）" }],
     },
     {
       manager: { username: "james", name: "James", title: "第三行銷部主管（俄羅斯 Katusha／中東 DOX／以色列／伊朗）" },
       department: "第三行銷部",
+      region: "SOUTH",
       reps: [{ username: "vivien", name: "Vivien", title: "行銷業務專員（俄羅斯 Katusha／中東 DOX／以色列／伊朗）" }],
     },
   ],
@@ -119,7 +124,7 @@ async function main() {
         email: `${team.manager.username}@company.com`,
         role: "SALES_MANAGER",
         department: team.department,
-        region: "OVERSEAS",
+        region: team.region,
         title: team.manager.title,
         managerId: gm.id,
       },
@@ -134,7 +139,7 @@ async function main() {
           email: `${rep.username}@company.com`,
           role: "SALES",
           department: team.department,
-          region: "OVERSEAS",
+          region: team.region,
           title: rep.title,
           managerId: manager.id,
         },

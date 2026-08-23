@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { asDataRegion, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isSalesManager, publicUserSelect } from "@/lib/auth";
+import { asDataRegion, getDealScopeFilter, getEntityScopeFilter, isGMOrAdmin, isOrderAdmin, isSalesManager, publicUserSelect } from "@/lib/auth";
 import { requirePermission } from "@/lib/authorization";
 import { recordAuditEvent } from "@/lib/audit";
 import { apiError, apiErrorFromUnknown, apiSuccess, parseJsonBody, parseQuery } from "@/lib/api-response";
@@ -114,8 +114,8 @@ export async function POST(request: Request) {
       return apiError(request, 400, "CONTACT_ACCOUNT_MISMATCH", "聯絡人不屬於指定的企業客戶");
     }
 
-    // Default region to user's region if not specified or not GM
-    const effectiveRegion = asDataRegion(isGMOrAdmin(user)
+    // Default region to user's region if not specified; GM/Admin/OrderAdmin（跨市場支援）可指定或由關聯資料推導
+    const effectiveRegion = asDataRegion(isGMOrAdmin(user) || isOrderAdmin(user)
       ? (region || contact?.region || account?.region || "NORTH")
       : user.region);
     if (!effectiveRegion) {

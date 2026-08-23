@@ -46,7 +46,7 @@
 
 展示資料 seed 只有在明確提供 `DEMO_SEED_PASSWORD` 時才執行；不可將 demo seed 用於正式環境或管理員密碼恢復。
 
-`ADMIN` 是獨立的系統管理角色，不代表業務階層。業務主線為「GM → 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 是掛在區域主管下的訂單／業務助理角色。
+`ADMIN` 是獨立的系統管理角色，不代表業務階層。業務主線為「GM → 市場部主管／區域主管 → Sales」；`ORDER_ADMIN` 是跨市場的訂單管理支援角色（組織上掛在市場部主管下）。
 
 | Role | Scope | 主要職責與限制 |
 | --- | --- | --- |
@@ -54,7 +54,7 @@
 | `GM` | `ALL` | 全公司業務資料、決策報表與組織管理；可任命各業務線主管。 |
 | `MARKETING_MANAGER` | `ALL` | 市場部專員與行銷 campaign/workflow；不可存取銷售報表、使用者管理或 audit API。 |
 | `SALES_MANAGER` | 指定區域 | 管理該區域的 Sales 與 `ORDER_ADMIN`，可查看區域商機與線索。 |
-| `ORDER_ADMIN` | 指定區域 | Sales Assistant；可在所屬區域讀取／建立／更新 Deal，不能管理使用者、報表或安全稽核。 |
+| `ORDER_ADMIN` | 總部與其他 | 訂單管理員（跨市場支援）；可讀取／建立／更新全市場 Deal，不能管理使用者、報表或安全稽核。 |
 | `SALES` | 指定區域 | 僅能操作自己負責的商機／線索與所屬區域客戶資料。 |
 | `MARKETING` / `SUPPORT` | `ALL` | 分別執行核准的行銷流程與客服工單工作。 |
 
@@ -70,11 +70,11 @@
 * `getDealScopeFilter(user, queryRegion)`：
   * 若 `user` 為 `ADMIN` 或 `GM`：可查看所有區域資料（若選定區域則套用該區域）。
   * 若 `user` 為 `SALES_MANAGER`：自動鎖定 `region: user.region`，可見全區下屬商機。
-  * 若 `user` 為 `ORDER_ADMIN`：自動鎖定所屬區域，可見該區域商機。
+  * 若 `user` 為 `ORDER_ADMIN`：跨市場支援單位，可見全部市場商機（可比照 GM 用 queryRegion 過濾）。
   * 若 `user` 為 `SALES`：強制鎖定 `AND: [{ region: user.region }, { assignedToId: user.id }]`。
 * `getEntityScopeFilter(user, queryRegion)`：用於 Account 與 Contact 的分區過濾。
 * `getLeadScopeFilter(user, queryRegion)`：用於 Lead 的分區與負責人過濾。
-* `ORDER_ADMIN` 走所屬區域 scope；`MARKETING_MANAGER` 雖是 `ALL`，其銷售／報表權限仍由 permission matrix 拒絕，不可只依 region 判斷授權。
+* `ORDER_ADMIN` 為全市場 scope；`MARKETING_MANAGER` 雖是 `ALL`，其銷售／報表權限仍由 permission matrix 拒絕，不可只依 region 判斷授權。區域槽位對應：NORTH=第一市場(中南美/菲律賓)、CENTRAL=第二市場(美歐/俄印/台灣)、SOUTH=第三市場(俄羅斯/中東)、OVERSEAS=總部與其他。
 * `isAdmin(user)`、`isGM(user)`、`isGMOrAdmin(user)`、`isSalesManager(user)`、`isMarketingManager(user)`、`isOrderAdmin(user)`。
 * `roleRequiresRegionalScope(role)` 與 `canManageUserRole(managerRole, subordinateRole)`：集中驗證區域角色與主管任命規則；`inspectManagerHierarchy()` 只沿祖先鏈檢查，最多 50 層。
 

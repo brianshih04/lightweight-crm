@@ -228,7 +228,7 @@ export function getDealScopeFilter(
   queryRegion?: string | null
 ): Prisma.DealWhereInput {
   if (!user) return { id: "__unauthorized__" };
-  if (isGMOrAdmin(user)) {
+  if (isGMOrAdmin(user) || isOrderAdmin(user)) {
     const requestedRegion = asDataRegion(queryRegion);
     if (requestedRegion) return { region: requestedRegion };
     return {};
@@ -256,6 +256,7 @@ export function getDealScopeFilter(
 /**
  * Contact & Account Scope Filter:
  * - Admin & GM: Sees ALL
+ * - Order Admin: Sees ALL（訂單管理員是跨市場支援單位）
  * - Sales Manager & Sales: Sees their Region
  */
 export function getEntityScopeFilter(
@@ -263,7 +264,7 @@ export function getEntityScopeFilter(
   queryRegion?: string | null
 ): { id?: string; region?: DataRegion } {
   if (!user) return { id: "__unauthorized__" };
-  if (isGMOrAdmin(user)) {
+  if (isGMOrAdmin(user) || isOrderAdmin(user)) {
     const requestedRegion = asDataRegion(queryRegion);
     if (requestedRegion) return { region: requestedRegion };
     return {};
@@ -276,6 +277,7 @@ export function getEntityScopeFilter(
 /**
  * Lead Scope Filter:
  * - Admin & GM: All leads
+ * - Order Admin: All leads（跨市場支援）
  * - Sales Manager: All leads in Region
  * - Sales: Leads assigned to them in Region
  */
@@ -284,7 +286,7 @@ export function getLeadScopeFilter(
   queryRegion?: string | null
 ): Prisma.LeadWhereInput {
   if (!user) return { id: "__unauthorized__" };
-  if (isGMOrAdmin(user)) {
+  if (isGMOrAdmin(user) || isOrderAdmin(user)) {
     const requestedRegion = asDataRegion(queryRegion);
     if (requestedRegion) return { region: requestedRegion };
     return {};

@@ -149,6 +149,10 @@
   $res = Invoke-RestMethod -Uri "http://localhost:3000/api/auth/login" -Method Post -Headers @{Origin="http://localhost:3000"} -Body (@{username=$credential.UserName; password=$credential.GetNetworkCredential().Password} | ConvertTo-Json) -ContentType "application/json" -WebSession $session;
   ```
 
+### ⚠️ Gotcha 3b: 跑完 test:postgres 後必須重新產生 SQLite client
+* `npm run test:postgres` 前需執行 `npx prisma generate --schema prisma/postgresql/schema.prisma`，這會把 `node_modules/.prisma/client` 覆蓋為 PostgreSQL 版；之後直接 `npm run start` 會因 `DATABASE_URL=file:` 與 postgresql provider 不符而讓 `/api/health` 回 503。
+* **跑完 PostgreSQL 相關工作後，一律執行 `npx prisma generate`（主 schema，SQLite）再啟動本機伺服器。**
+
 ### ⚠️ Gotcha 4: SQLite 不適合作為正式高併發資料庫
 * `TicketSequence` 在 transaction 內原子遞增，可保證工單號唯一；但 SQLite 同一時間只能有單一 writer。
 * 本機 `file:` 資料庫因此以 process-global FIFO 序列化工單建立，並已通過 100 筆同時請求測試。這只保護單一 Node.js process，不是多副本部署方案。
